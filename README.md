@@ -37,8 +37,16 @@ $ ./tests/run_tests.sh      # host tests, no zkVM needed
 
 ## Coverage
 
-Unlike SP1 — which publishes a complete implementation of the standard as its
-zkEVM SDK — OpenVM ships no C ABI at all, so everything here is ours.
+OpenVM has an official implementation of the standard in progress — the
+`openvm-caci` crate (`guest-libs/caci`), on the unmerged branch
+`feat/caci-secp256r1`. It is RV64-based and currently covers `zkvm_keccak256`,
+`zkvm_sha256`, `zkvm_secp256k1_verify`, `zkvm_secp256k1_ecrecover` and
+`zkvm_secp256r1_verify`. It is an rlib, so consuming it would need a staticlib
+facade (the shape SP1 uses for `libzkevm-cabi`) and a pinned dependency on a
+feature branch.
+
+Until that lands on a release branch this package implements the hashes
+itself, directly on the custom instructions.
 
 | Standard entry point | State |
 |----------------------|-------|
@@ -47,13 +55,14 @@ zkEVM SDK — OpenVM ships no C ABI at all, so everything here is ours.
 | everything else | not implemented |
 
 The 19-function standard also covers `ripemd160`, `blake2f`, `modexp`,
-secp256k1/secp256r1, BN254, BLS12-381 and KZG. OpenVM accelerates none of
-those through a C ABI; its curve support (`openvm-pairing`, `openvm-k256`,
-`openvm-p256`, and `openvm-kzg` from `axiom-crypto/openvm-eth`) is exposed as
-generic Rust APIs over traits, with no `no_mangle` entry point to bind to.
-Closing that gap means either wrapping them by hand — one monomorphised
-instance per curve, in a Rust staticlib alongside this one — or computing them
-in managed code.
+secp256k1/secp256r1, BN254, BLS12-381 and KZG. Three of those
+(secp256k1 verify/ecrecover, secp256r1 verify) already exist upstream in
+`openvm-caci`; the rest do not. OpenVM's curve support (`openvm-pairing`,
+`openvm-k256`, `openvm-p256`, and `openvm-kzg` from `axiom-crypto/openvm-eth`)
+is exposed as generic Rust APIs over traits, with no `no_mangle` entry point to
+bind to, so closing the remaining gap means either wrapping them by hand — one
+monomorphised instance per curve, in a Rust staticlib alongside this one — or
+computing them in managed code.
 
 ## Constraints
 
