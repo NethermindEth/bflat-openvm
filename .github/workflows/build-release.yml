@@ -1,0 +1,177 @@
+name: Build and publish NuGet package
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to NuGet
+        default: "No"
+        type: choice
+        options:
+          - "No"
+          - Staging
+          - Production
+
+jobs:
+  build-libopenvm:
+    name: Build libopenvm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install RISC-V binutils and clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-riscv64-linux-gnu clang
+
+      - name: Run host tests
+        run: ./tests/run_tests.sh
+
+      - name: Build static library
+        run: ./build/build.sh
+
+      - name: Verify the accelerator surface
+        run: |
+          # Only what this library actually implements; see README.md for the
+          # gap against the full eth-act standard.
+          NM=riscv64-linux-gnu-nm
+          missing=0
+          for sym in zkvm_keccak256 zkvm_sha256 zkvm_keccakf zkvm_keccak_xorin \
+                     zkvm_sha256_compress zkvm_sha512_compress zkvm_u256_add zkvm_u256_mul ; do
+            if ! $NM --defined-only output/libopenvm.a 2>/dev/null | grep -q " T $sym$" ; then
+              echo "MISSING: $sym"; missing=$((missing + 1))
+            fi
+          done
+          [ "$missing" = "0" ] || { echo "accelerator surface check failed"; exit 1; }
+          echo "accelerator surface OK"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: libopenvm
+          path: |
+            output/libopenvm.a
+            output/libopenvm.bflat.manifest
+          if-no-files-found: error
+
+  build-nupkg:
+    name: Build NuGet package
+    needs: build-libopenvm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      NUGET_HOST: ${{ inputs.publish == 'Staging' && 'https://int.nugettest.org' || 'https://www.nuget.org' }}
+    outputs:
+      version: ${{ steps.pkg.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+
+      - name: Download libopenvm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: libopenvm
+
+      - name: Move artifacts into the package project
+        run: |
+          mkdir -p src/runtime/runtimes/linux-riscv64/native
+          mv libopenvm.a src/runtime/runtimes/linux-riscv64/native/
+          mv libopenvm.bflat.manifest src/runtime/
+
+      - name: Inject package_version into the manifest
+        run: |
+          PREFIX=$(grep -oP '(?<=<VersionPrefix>)[^<]+' src/runtime/Directory.Build.props | tr -d '[:space:]')
+          SUFFIX=$(grep -oP '(?<=<VersionSuffix>)[^<]+' src/runtime/Directory.Build.props | tr -d '[:space:]')
+          VERSION="$PREFIX${SUFFIX:+-$SUFFIX}"
+
+          MANIFEST=src/runtime/libopenvm.bflat.manifest
+          jq --arg version "$VERSION" '. + {package_version: $version}' \
+            "$MANIFEST" > "$MANIFEST.tmp"
+          mv "$MANIFEST.tmp" "$MANIFEST"
+
+      - name: Pack
+        working-directory: src/runtime
+        run: dotnet pack Nethermind.OpenVm.Runtime.csproj -c release
+
+      - name: Get package version
+        id: pkg
+        working-directory: src/runtime
+        run: |
+          PKG=$(ls ./artifacts/package/release/*.nupkg | head -1)
+          VERSION=$(basename "$PKG" .nupkg | sed 's/^Nethermind\.OpenVm\.Runtime\.//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: NuGet login
+        if: github.event_name == 'workflow_dispatch' && inputs.publish != 'No'
+        uses: nuget/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+          audience: ${{ env.NUGET_HOST }}
+          token-service-url: ${{ env.NUGET_HOST }}/api/v2/token
+
+      - name: Publish NuGet package
+        if: github.event_name == 'workflow_dispatch' && inputs.publish != 'No'
+        working-directory: src/runtime
+        run: |
+          dotnet nuget push ./artifacts/package/release/*.nupkg \
+            -k "${{ steps.login.outputs.NUGET_API_KEY }}" -s ${{ env.NUGET_HOST }}/api/v2/package
+
+      - name: Upload nupkg artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: nupkg
+          path: src/runtime/artifacts/package/release/*.nupkg
+          if-no-files-found: error
+
+  publish-nupkg-github:
+    name: Publish to GitHub
+    if: github.event_name == 'workflow_dispatch' && inputs.publish != 'No'
+    needs: build-nupkg
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download nupkg artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: nupkg
+          path: nupkg
+
+      - name: Download libopenvm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: libopenvm
+          path: libopenvm
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build-nupkg.outputs.version }}
+          name: Nethermind.OpenVm.Runtime ${{ needs.build-nupkg.outputs.version }}
+          files: |
+            nupkg/*.nupkg
+            libopenvm/libopenvm.a
+            libopenvm/libopenvm.bflat.manifest
+          body: |
+            OpenVM zkVM accelerators for bflat guests.
+
+            **Package**: `Nethermind.OpenVm.Runtime`
+            **Version**: `${{ needs.build-nupkg.outputs.version }}`
+
+            Implements the Keccak-256 and SHA-256 entry points of the eth-act
+            zkVM accelerator standard on OpenVM's custom instructions.
+          draft: false
+          prerelease: ${{ contains(needs.build-nupkg.outputs.version, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
