@@ -127,6 +127,14 @@ jobs:
           riscv64-linux-gnu-readelf -h guest | grep -E 'Class:|Machine:|Entry point'
           ls -la guest
 
+      - name: Upload the linked guest
+        # Keeping the image makes an "N instructions the VM cannot decode"
+        # report something you can go and disassemble, instead of a number.
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-guest
+          path: guest
+
       - name: Check the linked image
         # OpenVM emits `unimp` for a word it cannot decode and traps only if
         # execution reaches it, so an A-extension instruction is a latent trap
