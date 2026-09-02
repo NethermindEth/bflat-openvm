@@ -12,7 +12,7 @@
   "linker-flavor": "ld.lld",
   "linker": "rust-lld",
   "cpu": "generic-rv64",
-  "features": "+m",
+  "features": "+m,+forced-atomics",
   "max-atomic-width": 64,
   "atomic-cas": true,
   "singlethread": true,

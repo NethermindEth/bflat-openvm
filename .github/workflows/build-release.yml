@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      bflat_ref:
+        description: bflat-riscv64 ref to build the linker against
+        default: feature/new_zkvms
+        type: string
       publish:
         description: Publish to NuGet
         default: "No"
@@ -39,32 +43,6 @@ jobs:
       - name: Build static library
         run: ./build/build.sh
 
-      - name: Verify the accelerator surface
-        run: |
-          # Only what this library actually implements; see README.md for the
-          # gap against the full eth-act standard.
-          NM=riscv64-linux-gnu-nm
-          missing=0
-          for sym in zkvm_keccak256 zkvm_sha256 \
-                     zkvm_secp256k1_verify zkvm_secp256k1_ecrecover zkvm_secp256r1_verify \
-                     zkvm_keccakf zkvm_keccak_xorin \
-                     zkvm_sha256_compress zkvm_sha512_compress zkvm_u256_add zkvm_u256_mul ; do
-            if ! $NM --defined-only output/libopenvm.a 2>/dev/null | grep -q " T $sym$" ; then
-              echo "MISSING: $sym"; missing=$((missing + 1))
-            fi
-          done
-          # OpenVM's guest runtime rides in with the accelerated curve crates and
-          # would collide with the guest's own entry point, musl's mem* and
-          # rust_sys's allocator bridge; build.sh makes those local.
-          leaked=$($NM --defined-only output/libopenvm.a 2>/dev/null | grep " T " \
-                   | awk '{print $3}' \
-                   | grep -xE '_start|__start|memcpy|memset|memmove|memcmp|sys_alloc_aligned' || true)
-          if [ -n "$leaked" ] ; then
-            echo "LEAKED AS GLOBAL: $leaked"; missing=$((missing + 1))
-          fi
-          [ "$missing" = "0" ] || { echo "accelerator surface check failed"; exit 1; }
-          echo "accelerator surface OK"
-
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
@@ -73,6 +51,102 @@ jobs:
             output/libopenvm.a
             output/libopenvm.bflat.manifest
           if-no-files-found: error
+
+  link-guest:
+    # The surface check in build-libopenvm proves the symbols exist. This proves
+    # they LINK: a real bflat guest, built for --libc openvm against the real
+    # linker script, calling all 21 entry points through direct P/Invoke. It is
+    # the step that catches a symbol colliding with musl or with the guest's own
+    # entry point - the failure mode the localization in build/build.sh exists
+    # to prevent, and one no amount of nm-ing the archive can rule out.
+    name: Link a real bflat guest
+    needs: build-libopenvm
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:26.04
+    steps:
+      - name: Install the toolchain
+        run: |
+          apt-get update
+          apt-get install -y git gcc-riscv64-linux-gnu g++-riscv64-linux-gnu \
+                             binutils-riscv64-linux-gnu llvm clang lld xxd \
+                             python3 python3-pip wget curl ca-certificates yq libicu-dev
+          pip3 install lief pyelftools --break-system-packages
+          # The riscv64 cross-gcc ships only hard-float (lp64d) glibc stubs;
+          # bflat's native modules are compiled -mabi=lp64.
+          touch /usr/riscv64-linux-gnu/include/gnu/stubs-lp64.h
+
+      - name: Install .NET
+        run: |
+          wget -q https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh
+          chmod +x dotnet-install.sh
+          ./dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet
+          ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet
+          echo "DOTNET_ROOT=/usr/share/dotnet" >> $GITHUB_ENV
+          echo "/usr/share/dotnet" >> $GITHUB_PATH
+
+      - name: Check out this repository
+        uses: actions/checkout@v4
+        with:
+          path: bflat-openvm
+
+      - name: Check out bflat-riscv64
+        uses: actions/checkout@v4
+        with:
+          repository: NethermindEth/bflat-riscv64
+          ref: ${{ inputs.bflat_ref || 'feature/new_zkvms' }}
+          path: bflat-riscv64
+
+      - name: Download the libopenvm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: libopenvm
+          path: bflat-openvm/output
+
+      - name: Build bflat and its native modules
+        working-directory: bflat-riscv64
+        # The modules leg is what produces lib/linux/riscv64/openvm/{script.ld,
+        # entrypoint.o} - the memory map this test is here to link against.
+        run: |
+          ./build.sh modules riscv64 perf 10
+          ./build.sh bflat riscv64 perf 10
+
+      - name: Link the guest against libopenvm
+        run: |
+          set -e
+          cp bflat-openvm/bflat-manifest.json bflat-openvm/output/libopenvm.bflat.manifest
+          bflat-riscv64/src/bflat/bin/Debug/net10.0/bflat build \
+            bflat-openvm/tests/integration/guest.cs \
+            --os linux --arch riscv64 --libc openvm --stdlib dotnet \
+            --no-pie --no-pthread -Ot \
+            --extlib "$PWD/bflat-openvm/output/libopenvm.bflat.manifest" \
+            -o guest
+          riscv64-linux-gnu-readelf -h guest | grep -E 'Class:|Machine:|Entry point'
+          ls -la guest
+
+      - name: Check the accelerators reached the image
+        run: |
+          # Not just present in the archive - actually pulled into the linked
+          # guest, past --gc-sections, with the intrinsics intact. Also assert
+          # the image is free of A-extension instructions: OpenVM decodes
+          # RV64IM and rejects lr/sc/amo outright, and the atomics the curve
+          # crates need come from src/sync.rs instead.
+          riscv64-linux-gnu-objdump -d guest \
+            | grep -oE '^ *[0-9a-f]+:[[:space:]]+[0-9a-f]{8}' | awk '{print $2}' > words.txt
+          python3 - <<'PY'
+          c0 = c1 = a = 0
+          for w in open("words.txt"):
+              v = int(w.strip(), 16); op = v & 0x7f
+              if op == 0x0b: c0 += 1
+              elif op == 0x2b: c1 += 1
+              elif op == 0x2f: a += 1
+          print(f"custom-0 (keccak/sha2/u256): {c0}")
+          print(f"custom-1 (algebra/ecc)     : {c1}")
+          print(f"A-extension                : {a}")
+          assert c0 > 0, "no custom-0 in the linked guest"
+          assert c1 > 0, "no custom-1 in the linked guest"
+          assert a == 0, "A-extension instructions in the image; OpenVM will reject it"
+          PY
 
   build-nupkg:
     name: Build NuGet package

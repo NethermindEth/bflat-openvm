@@ -1,0 +1,10 @@
+# OpenVM's crates gate their accelerated paths on
+# `cfg(any(openvm_intrinsics, target_os = "openvm"))`, but some of them - the
+# accelerator crate's sha256 among them - gate the *host* fallback on
+# `cfg(not(openvm_intrinsics))` alone. Those two are only equivalent under
+# OpenVM's own toolchain, which always sets the cfg. Our target JSON sets
+# `"os": "openvm"` but cannot set a cfg, so set it here: without it the guest
+# build tries to import the host `Digest` trait, which openvm-eth disables for
+# guest targets, and fails to compile.
+[build]
+rustflags = ["--cfg", "openvm_intrinsics"]

@@ -8,20 +8,28 @@ guests built with `--libc openvm`, providing the native half of
 
 ## What this is
 
-`libopenvm.a` — two layers in one archive:
+`libopenvm.a` — the native half of the eth-act zkVM standards for an OpenVM
+guest, in three layers:
 
-1. **`src/accel-rs`** — a Rust staticlib implementing the
-   [eth-act zkVM Cryptographic Accelerators C Interface](https://github.com/eth-act/zkvm-standards/tree/main/standards/c-interface-accelerators)
-   on top of OpenVM's own accelerated guest libraries (`openvm-keccak256`,
-   `openvm-sha2`, and the accelerated `k256` / `p256` forks).
-2. **`src/openvm_intrinsics`** — one instruction per accelerated primitive, for
-   anything the standard does not cover or that managed code wants to reach
-   directly. OpenVM has no syscalls: each primitive is a custom instruction
-   under RISC-V custom-0 (`0x0b`) or custom-1 (`0x2b`).
+1. **`openvm-accelerators`**, OpenVM's own implementation of the
+   [C interface for cryptographic accelerators](https://github.com/eth-act/zkvm-standards/tree/main/standards/c-interface-accelerators),
+   from [axiom-crypto/openvm-eth](https://github.com/axiom-crypto/openvm-eth).
+   All 19 entry points, host-tested upstream, and the same code ere-guests'
+   OpenVM guest is built on. We reimplement none of it.
+2. **`src/accel-rs`**, the staticlib wrapper, which supplies the three things
+   that crate leaves to the program: the curve and modulus registration
+   (`src/init.rs`), the
+   [IO interface](https://github.com/eth-act/zkvm-standards/tree/main/standards/io-interface)
+   (`src/io.rs`), and the `__sync_*` builtins an rv64im target needs and no
+   toolchain provides (`src/sync.rs`).
+3. **`src/openvm_intrinsics`**, one instruction per accelerated primitive, for
+   code that wants a permutation or a 256-bit ALU op directly rather than
+   through the standard. OpenVM has no syscalls: each primitive is a custom
+   instruction under RISC-V custom-0 (`0x0b`) or custom-1 (`0x2b`).
 
-Dependencies are pinned to a commit on `develop-v2.1.0`, OpenVM's live RV64
-line — not `develop-v2.1.0-rv64` (an older snapshot of the same work) and not
-`main` (still RV32, and it rejects a 64-bit ELF).
+Dependencies are pinned to `develop-v2.1.0`, OpenVM's live RV64 line — not
+`develop-v2.1.0-rv64` (an older snapshot of the same work) and not `main`,
+which is still RV32 and rejects a 64-bit ELF outright.
 
 ## Usage
 
@@ -30,77 +38,99 @@ $ bflat build app.cs --os linux --arch riscv64 --libc openvm \
       --extlib path/to/libopenvm.bflat.manifest
 ```
 
-## Building and testing
+## Building
 
 ```console
-$ ./build/build.sh          # needs binutils-riscv64-linux-gnu + clang
-$ ./tests/run_tests.sh      # host tests, no zkVM needed
+$ ./build/build.sh
 ```
+
+Needs `binutils-riscv64-linux-gnu` and a nightly Rust toolchain with
+`rust-src`: the accelerators are built for a custom bare-metal target that
+ships no prebuilt `core`, so `-Z build-std` is required. The cross-tool names
+are all overridable (`AS`, `AR`, `RANLIB`, `OBJCOPY`, `OBJDUMP`, `NM`) for
+hosts that spell them differently.
 
 ## Coverage
 
-| Standard entry point | State |
-|----------------------|-------|
-| `zkvm_keccak256` | **implemented** (`openvm-keccak256`) |
-| `zkvm_sha256` | **implemented** (`openvm-sha2`) |
-| `zkvm_secp256k1_verify` | **implemented** (accelerated `k256`) |
-| `zkvm_secp256k1_ecrecover` | **implemented** (accelerated `k256`) |
-| `zkvm_secp256r1_verify` | **implemented** (accelerated `p256`) |
-| `ripemd160`, `blake2f`, `modexp`, BN254, BLS12-381, KZG | not implemented |
+All 19 accelerators, plus both IO entry points:
 
-OpenVM has an official implementation of the same interface in progress — the
-`openvm-caci` crate on the unmerged branch `feat/caci-secp256r1`, covering the
-same five functions. It has no pull request and has not moved since 2026-07-28,
-so this package implements them itself rather than pinning to a stalled branch.
+| Entry points | Implementation |
+|---|---|
+| `zkvm_keccak256`, `zkvm_sha256` | OpenVM's keccak and sha2 extensions |
+| `zkvm_secp256k1_verify`, `zkvm_secp256k1_ecrecover`, `zkvm_secp256r1_verify` | the accelerated `k256` / `p256` |
+| `zkvm_bn254_g1_add`, `zkvm_bn254_g1_mul`, `zkvm_bn254_pairing` | the pairing extension |
+| `zkvm_bls12_g1_add`, `g1_msm`, `g2_add`, `g2_msm`, `pairing`, `map_fp_to_g1`, `map_fp2_to_g2` | the pairing extension |
+| `zkvm_kzg_point_eval` | `openvm-kzg` |
+| `zkvm_modexp` | accelerated for a BN254-Fr modulus, `aurora-engine-modexp` otherwise |
+| `zkvm_ripemd160`, `zkvm_blake2f` | software — OpenVM has no extension for either, on any branch |
+| `read_input`, `write_output` | `src/io.rs` |
 
-| Standard entry point | State |
-|----------------------|-------|
-| `zkvm_keccak256` | **implemented**, on the native keccak-f[1600] + xorin instructions |
-| `zkvm_sha256` | **implemented**, on the native SHA-256 compression instruction |
-| everything else | not implemented |
+`build/build.sh` fails if any of those is missing from the archive, and counts
+custom-0 and custom-1 instructions to catch a silent fallback to portable Rust.
+CI then links a real bflat guest that calls all 21 through direct P/Invoke
+(`tests/integration/guest.cs`) — which is what proves the symbols not only
+exist but survive a guest's link.
 
-The 19-function standard also covers `ripemd160`, `blake2f`, `modexp`,
-secp256k1/secp256r1, BN254, BLS12-381 and KZG. Three of those
-(secp256k1 verify/ecrecover, secp256r1 verify) already exist upstream in
-`openvm-caci`; the rest do not. OpenVM's curve support (`openvm-pairing`,
-`openvm-k256`, `openvm-p256`, and `openvm-kzg` from `axiom-crypto/openvm-eth`)
-is exposed as generic Rust APIs over traits, with no `no_mangle` entry point to
-bind to, so closing the remaining gap means either wrapping them by hand — one
-monomorphised instance per curve, in a Rust staticlib alongside this one — or
-computing them in managed code.
+## The output window is 32 bytes
+
+`write_output` appends, and multiple calls concatenate, as the standard
+requires — but only up to 32 bytes, past which it panics rather than drop
+bytes. That is a property of the target, not a policy choice: OpenVM's public
+output is a byte-addressed buffer written a `u64` at a time, and only the first
+32 bytes are guaranteed to exist. ere-guests' OpenVM platform takes the same
+limit and asserts on anything longer. A guest with more to publish should
+publish a hash of it, which is what OpenVM recommends regardless.
 
 ## Why the curves need an explicit init
 
-OpenVM's algebra and ecc extensions split each accelerated operation in two:
-the library (`k256`, `p256`) *declares* it as an `extern "C"` symbol, and the
-program *defines* it by naming the concrete moduli and curves it uses — what
-`cargo openvm` generates as `openvm_init_*.rs` for a Rust guest. Our guest is
-C#, and this staticlib is the only Rust in the link, so that declaration lives
-in `src/accel-rs/src/init.rs`.
+OpenVM's algebra, ecc and pairing extensions split each accelerated operation
+in two: the library declares it as an `extern "C"` symbol, and the *program*
+defines it by naming the concrete moduli, complex extensions and curves it uses
+— what `cargo openvm` generates as `openvm_init.rs` for a Rust guest. Our guest
+is C#, and this staticlib is the only Rust in the link, so that declaration
+lives in `src/accel-rs/src/init.rs`. It is the same list, in the same order, as
+ere-guests generates for its OpenVM Ethereum guest; the order is part of the
+ABI, because `complex_init!` addresses its base field by index into it.
 
 Without it everything still compiles, but every `sw_add_ne_extern_func_*` and
 `moduli_setup_extern_func_*` stays undefined and not one custom-1 instruction
-is emitted — the curve work would quietly fall back to portable Rust. `build.sh`
-therefore counts both custom-0 and custom-1 instructions in the finished archive
-and fails if either is zero.
+is emitted — the curve work would quietly fall back to portable Rust.
+
+## Everything outside the interface is localized
+
+The archive would otherwise export far more than it means to. The accelerated
+curves drag in OpenVM's guest runtime (`_start`, `mem*`, `sys_alloc_aligned`),
+and `-Z build-std` compiles `compiler_builtins` for a target with no libm, so
+it exports the entire C math surface as well. Every one of those collides with
+the guest: musl owns the math surface and `mem*`,
+`modules/zkvm_openvm/module.S` owns `_start`, and bflat's `rust_sys` module
+wraps `sys_alloc_aligned` so OpenVM's bump allocator draws from pal's heap
+instead of opening a second one.
+
+So `build/build.sh` localizes everything outside an explicit allowlist. A
+duplicate-symbol error is the good outcome here; the bad one is this archive
+silently winning over the math surface bflat's `nofp` module is meant to
+divert.
+
+## Atomics
+
+OpenVM decodes RV64IM, so there is no `lr`/`sc`/`amo*` for LLVM to lower an
+atomic to. The target spec carries `+forced-atomics`, which turns atomic loads
+and stores into plain ones plus a `fence` (OpenVM's decoder accepts `fence`; it
+rejects `fence.i`), and everything it cannot inline becomes a `__sync_*` call.
+`compiler_builtins` implements those only for ARM Thumb, so `src/sync.rs`
+provides them: deliberately non-atomic, because an OpenVM guest is single-hart
+with no interrupts and no way to create a thread, which makes a plain
+load-compare-store indistinguishable from the atomic sequence. CI asserts the
+linked image contains no A-extension instruction.
 
 ## Constraints
 
-**Every pointer passed to the intrinsics must be 8-byte aligned.** OpenVM's own
-Rust wrappers spend most of their body bouncing unaligned buffers through a
+**Every pointer passed to the raw intrinsics must be 8-byte aligned.** OpenVM's
+own Rust wrappers spend most of their body bouncing unaligned buffers through a
 temporary; these shims do not, which is what keeps each primitive at one
-instruction. The accelerator entry points above stage caller buffers through
-aligned locals, so this constraint applies only if you call the intrinsics
-directly.
+instruction. The standard's entry points stage caller buffers through aligned
+locals, so this applies only to `src/openvm_intrinsics` used directly.
 
 **`zkvm_keccak_xorin` absorbs at most 136 bytes** (`KECCAK_RATE`); a larger
 length executes but fails to prove. `zkvm_keccak256` chunks for you.
-
-## Verification
-
-The hashes and curves are OpenVM's own implementations, so there is no local
-crypto to test. What `build.sh` does check, on every build, is that the
-accelerators actually activated: it counts custom-0 and custom-1 instructions
-in the archive and fails on zero. CI additionally asserts that every symbol the
-managed side imports is present and global, and that none of OpenVM's runtime
-entry points leaked in as a global.

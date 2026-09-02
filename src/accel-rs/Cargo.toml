@@ -3,27 +3,42 @@ name = "bflat-openvm-accel"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "eth-act zkVM accelerator C ABI implemented on OpenVM intrinsics"
+description = "eth-act zkVM accelerator and IO C ABI for OpenVM, packaged as a staticlib"
 
 [lib]
 name = "openvmaccel"
 crate-type = ["staticlib"]
 
-# Pinned to a commit on develop-v2.1.0, OpenVM's live RV64 line. NOT
-# develop-v2.1.0-rv64 (an older snapshot of the same work) and NOT main
-# (still RV32). k256/p256 keep their upstream crate names, so they are
-# renamed here the way OpenVM's own guests do.
+# The accelerators themselves are OpenVM's own: `openvm-accelerators` in
+# axiom-crypto/openvm-eth implements all 19 functions of the eth-act C
+# interface, with host-side tests, and is what ere-guests' OpenVM guest is
+# built around. This crate only turns that rlib into a staticlib a
+# non-Rust guest can link, and adds the two pieces a C# guest cannot get any
+# other way: the curve/modulus init (src/init.rs) and the IO interface
+# (src/io.rs), which openvm-accelerators deliberately leaves to the program.
+#
+# Everything is referenced by BRANCH, not by rev, and the branch is
+# `develop-v2.1.0` - OpenVM's live RV64 line. NOT develop-v2.1.0-rv64 (an
+# older snapshot of the same work) and NOT main (still RV32).
+#
+# The branch reference is not cosmetic: Cargo's source identity for a git
+# dependency includes the reference, so a `rev = ...` and a `branch = ...`
+# pointing at the same commit still yield two separate copies of every crate,
+# and then openvm-accelerators' `Fp` is a different type from the one our
+# init declares. openvm-eth pins openvm by branch, so we must too.
+# Cargo.lock is committed and pins the exact commits.
 [dependencies]
-openvm-keccak256 = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5" }
-openvm-sha2      = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5" }
-openvm-k256      = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5", package = "k256" }
-openvm-p256      = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5", package = "p256" }
-# Needed for the moduli_init!/sw_init! declarations in src/init.rs: the macros
-# expand to code that names the `openvm` crate, so it has to be a direct
-# dependency even though k256 already pulls it in transitively.
-openvm               = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5", default-features = false }
-openvm-algebra-guest = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5" }
-openvm-ecc-guest     = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5" }
+openvm-accelerators = { git = "https://github.com/axiom-crypto/openvm-eth.git", branch = "develop-v2.1.0", default-features = false }
+
+# Only for src/init.rs and src/io.rs. The macros expand to code that names the
+# `openvm` crate, so it has to be a direct dependency even though the
+# accelerators pull it in transitively.
+openvm               = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0", default-features = false }
+openvm-algebra-guest = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0" }
+openvm-ecc-guest     = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0" }
+openvm-k256          = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0", package = "k256" }
+openvm-p256          = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0", package = "p256" }
+openvm-pairing       = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0", features = ["bn254", "bls12_381"] }
 
 [profile.release]
 opt-level = 3
