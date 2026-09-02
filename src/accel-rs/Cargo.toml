@@ -1,0 +1,32 @@
+[package]
+name = "bflat-openvm-accel"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "eth-act zkVM accelerator C ABI implemented on OpenVM intrinsics"
+
+[lib]
+name = "openvmaccel"
+crate-type = ["staticlib"]
+
+# Pinned to a commit on develop-v2.1.0, OpenVM's live RV64 line. NOT
+# develop-v2.1.0-rv64 (an older snapshot of the same work) and NOT main
+# (still RV32). k256/p256 keep their upstream crate names, so they are
+# renamed here the way OpenVM's own guests do.
+[dependencies]
+openvm-keccak256 = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5" }
+openvm-sha2      = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5" }
+openvm-k256      = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5", package = "k256" }
+openvm-p256      = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5", package = "p256" }
+# Needed for the moduli_init!/sw_init! declarations in src/init.rs: the macros
+# expand to code that names the `openvm` crate, so it has to be a direct
+# dependency even though k256 already pulls it in transitively.
+openvm               = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5", default-features = false }
+openvm-algebra-guest = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5" }
+openvm-ecc-guest     = { git = "https://github.com/openvm-org/openvm.git", rev = "56d5e4dbb5" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

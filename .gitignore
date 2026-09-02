@@ -1,10 +1,7 @@
-# Build output
 output/
 tmp/
 *.o
-
-# NuGet packaging: the static library and the manifest are copied into the
-# package project by build.sh / CI, never committed.
+src/accel-rs/target/
 src/runtime/runtimes/
 src/runtime/*.bflat.manifest
 artifacts/

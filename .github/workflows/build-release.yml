@@ -24,13 +24,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Install RISC-V binutils and clang
+      - name: Install RISC-V binutils
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils-riscv64-linux-gnu clang
+          sudo apt-get install -y binutils-riscv64-linux-gnu
 
-      - name: Run host tests
-        run: ./tests/run_tests.sh
+      - name: Install the Rust nightly toolchain
+        # build-std needs nightly plus rust-src: the accelerator staticlib is
+        # built for a custom bare-metal target that ships no prebuilt core.
+        run: |
+          rustup toolchain install nightly --component rust-src --profile minimal
+          rustup run nightly rustc --version
 
       - name: Build static library
         run: ./build/build.sh
@@ -41,12 +45,23 @@ jobs:
           # gap against the full eth-act standard.
           NM=riscv64-linux-gnu-nm
           missing=0
-          for sym in zkvm_keccak256 zkvm_sha256 zkvm_keccakf zkvm_keccak_xorin \
+          for sym in zkvm_keccak256 zkvm_sha256 \
+                     zkvm_secp256k1_verify zkvm_secp256k1_ecrecover zkvm_secp256r1_verify \
+                     zkvm_keccakf zkvm_keccak_xorin \
                      zkvm_sha256_compress zkvm_sha512_compress zkvm_u256_add zkvm_u256_mul ; do
             if ! $NM --defined-only output/libopenvm.a 2>/dev/null | grep -q " T $sym$" ; then
               echo "MISSING: $sym"; missing=$((missing + 1))
             fi
           done
+          # OpenVM's guest runtime rides in with the accelerated curve crates and
+          # would collide with the guest's own entry point, musl's mem* and
+          # rust_sys's allocator bridge; build.sh makes those local.
+          leaked=$($NM --defined-only output/libopenvm.a 2>/dev/null | grep " T " \
+                   | awk '{print $3}' \
+                   | grep -xE '_start|__start|memcpy|memset|memmove|memcmp|sys_alloc_aligned' || true)
+          if [ -n "$leaked" ] ; then
+            echo "LEAKED AS GLOBAL: $leaked"; missing=$((missing + 1))
+          fi
           [ "$missing" = "0" ] || { echo "accelerator surface check failed"; exit 1; }
           echo "accelerator surface OK"
 
