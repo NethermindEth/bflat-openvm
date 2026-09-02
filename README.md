@@ -17,9 +17,12 @@ guests built with `--libc openvm`, providing the native half of
    [eth-act standard](https://github.com/eth-act/zkvm-standards) functions,
    written on top of those shims.
 
-Encodings come from the RV64 branch (`openvm`, branch
-`develop-v2.1.0-rv64`) — `extensions/{keccak256,sha2,bigint}/guest`. OpenVM's
-`main` branch is still RV32 and does not apply.
+Encodings come from OpenVM's live RV64 line — branch `develop-v2.1.0`,
+`extensions/{keccak256,sha2,bigint}/guest`. Note that `develop-v2.1.0-rv64` is
+an older snapshot of the same work and `main` is still RV32, so neither is the
+right reference. The encodings are identical across both RV64 snapshots; what
+moved is the memory map, where guest memory grew from 512 MiB to the full 4 GiB
+u32 range (`MEM_BITS` 29 -> 32).
 
 ## Usage
 
