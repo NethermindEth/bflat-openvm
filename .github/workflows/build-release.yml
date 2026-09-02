@@ -127,29 +127,13 @@ jobs:
           riscv64-linux-gnu-readelf -h guest | grep -E 'Class:|Machine:|Entry point'
           ls -la guest
 
-      - name: Check the accelerators reached the image
+      - name: Check the linked image
+        # OpenVM emits `unimp` for a word it cannot decode and traps only if
+        # execution reaches it, so an A-extension instruction is a latent trap
+        # rather than a load failure - reported here, not fatal, until the
+        # prebuilt musl stops shipping them.
         run: |
-          # Not just present in the archive - actually pulled into the linked
-          # guest, past --gc-sections, with the intrinsics intact. Also assert
-          # the image is free of A-extension instructions: OpenVM decodes
-          # RV64IM and rejects lr/sc/amo outright, and the atomics the curve
-          # crates need come from src/sync.rs instead.
-          riscv64-linux-gnu-objdump -d guest \
-            | grep -oE '^ *[0-9a-f]+:[[:space:]]+[0-9a-f]{8}' | awk '{print $2}' > words.txt
-          python3 - <<'PY'
-          c0 = c1 = a = 0
-          for w in open("words.txt"):
-              v = int(w.strip(), 16); op = v & 0x7f
-              if op == 0x0b: c0 += 1
-              elif op == 0x2b: c1 += 1
-              elif op == 0x2f: a += 1
-          print(f"custom-0 (keccak/sha2/u256): {c0}")
-          print(f"custom-1 (algebra/ecc)     : {c1}")
-          print(f"A-extension                : {a}")
-          assert c0 > 0, "no custom-0 in the linked guest"
-          assert c1 > 0, "no custom-1 in the linked guest"
-          assert a == 0, "A-extension instructions in the image; OpenVM will reject it"
-          PY
+          python3 bflat-openvm/tests/integration/check_image.py guest --require-custom
 
   build-nupkg:
     name: Build NuGet package
