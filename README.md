@@ -1,6 +1,6 @@
 # bflat-openvm
 
-[![Nethermind.OpenVm.Runtime](https://img.shields.io/nuget/v/Nethermind.OpenVm.Runtime)](https://www.nuget.org/packages/Nethermind.OpenVm.Runtime)
+[![Nethermind.OpenVM.Runtime](https://img.shields.io/nuget/v/Nethermind.OpenVM.Runtime)](https://www.nuget.org/packages/Nethermind.OpenVM.Runtime)
 
 OpenVM bindings for [bflat-riscv64](https://github.com/NethermindEth/bflat-riscv64)
 guests built with `--libc openvm`, providing the native half of
