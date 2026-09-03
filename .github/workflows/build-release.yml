@@ -117,6 +117,10 @@ jobs:
       - name: Link the guest against libopenvm
         run: |
           set -e
+          echo "--- linker script the layout is using:"
+          grep -nE 'ALIGN|>ram|>rom|AT>' bflat-riscv64/src/bflat/bin/Debug/net10.0/lib/linux/riscv64/openvm/script.ld | head -40
+          sha256sum bflat-riscv64/src/bflat/bin/Debug/net10.0/lib/linux/riscv64/openvm/script.ld \
+                    bflat-riscv64/src/bflat/modules/zkvm_openvm/script.ld
           cp bflat-openvm/bflat-manifest.json bflat-openvm/output/libopenvm.bflat.manifest
           bflat-riscv64/src/bflat/bin/Debug/net10.0/bflat build \
             bflat-openvm/tests/integration/guest.cs \
