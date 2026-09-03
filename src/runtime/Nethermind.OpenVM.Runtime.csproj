@@ -14,7 +14,7 @@
     <Description>OpenVM zkVM accelerators for the Nethermind guest for OpenVM</Description>
     <EmbedUntrackedSources>false</EmbedUntrackedSources>
     <IncludeSymbols>false</IncludeSymbols>
-    <PackageId>Nethermind.OpenVm.Runtime</PackageId>
+    <PackageId>Nethermind.OpenVM.Runtime</PackageId>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://nethermind.io</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>

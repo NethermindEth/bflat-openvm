@@ -192,14 +192,14 @@ jobs:
 
       - name: Pack
         working-directory: src/runtime
-        run: dotnet pack Nethermind.OpenVm.Runtime.csproj -c release
+        run: dotnet pack Nethermind.OpenVM.Runtime.csproj -c release
 
       - name: Get package version
         id: pkg
         working-directory: src/runtime
         run: |
           PKG=$(ls ./artifacts/package/release/*.nupkg | head -1)
-          VERSION=$(basename "$PKG" .nupkg | sed 's/^Nethermind\.OpenVm\.Runtime\.//')
+          VERSION=$(basename "$PKG" .nupkg | sed 's/^Nethermind\.OpenVM\.Runtime\.//')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: NuGet login
@@ -249,7 +249,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.build-nupkg.outputs.version }}
-          name: Nethermind.OpenVm.Runtime ${{ needs.build-nupkg.outputs.version }}
+          name: Nethermind.OpenVM.Runtime ${{ needs.build-nupkg.outputs.version }}
           files: |
             nupkg/*.nupkg
             libopenvm/libopenvm.a
@@ -257,7 +257,7 @@ jobs:
           body: |
             OpenVM zkVM accelerators for bflat guests.
 
-            **Package**: `Nethermind.OpenVm.Runtime`
+            **Package**: `Nethermind.OpenVM.Runtime`
             **Version**: `${{ needs.build-nupkg.outputs.version }}`
 
             Implements the Keccak-256 and SHA-256 entry points of the eth-act
