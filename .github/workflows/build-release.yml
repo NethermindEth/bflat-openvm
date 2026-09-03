@@ -117,8 +117,9 @@ jobs:
       - name: Link the guest against libopenvm
         run: |
           set -e
-          echo "--- linker script the layout is using:"
-          grep -nE 'ALIGN|>ram|>rom|AT>' bflat-riscv64/src/bflat/bin/Debug/net10.0/lib/linux/riscv64/openvm/script.ld | head -40
+          # The layout copy of the linker script is what the link actually
+          # uses; print both so a stale layout is visible rather than
+          # mystifying.
           sha256sum bflat-riscv64/src/bflat/bin/Debug/net10.0/lib/linux/riscv64/openvm/script.ld \
                     bflat-riscv64/src/bflat/modules/zkvm_openvm/script.ld
           cp bflat-openvm/bflat-manifest.json bflat-openvm/output/libopenvm.bflat.manifest
@@ -140,12 +141,14 @@ jobs:
           path: guest
 
       - name: Check the linked image
-        # OpenVM emits `unimp` for a word it cannot decode and traps only if
-        # execution reaches it, so an A-extension instruction is a latent trap
-        # rather than a load failure - reported here, not fatal, until the
-        # prebuilt musl stops shipping them.
+        # --no-atomics is now enforced: bflat's nothread module displaces the
+        # musl primitives whose lr/sc/amo* used to leave 128 of them in the
+        # image. OpenVM emits `unimp` for a word it cannot decode and traps
+        # only if execution reaches it, so one reappearing would be a landmine
+        # rather than a load failure - which is exactly why it is worth failing
+        # the build over.
         run: |
-          python3 bflat-openvm/tests/integration/check_image.py guest --require-custom
+          python3 bflat-openvm/tests/integration/check_image.py guest --require-custom --no-atomics
 
   build-nupkg:
     name: Build NuGet package
