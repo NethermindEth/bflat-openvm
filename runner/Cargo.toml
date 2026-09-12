@@ -1,0 +1,15 @@
+# Execution harness for a bflat-built OpenVM guest.
+#
+# Built as a member of the OpenVM workspace (see Dockerfile): openvm-sdk and
+# friends are workspace dependencies there and do not resolve standalone.
+[package]
+name = "openvm-runelf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+openvm-sdk = { workspace = true }
+openvm-sdk-config = { workspace = true }
+toml = { workspace = true }
+hex = { workspace = true }
+eyre = { workspace = true }
