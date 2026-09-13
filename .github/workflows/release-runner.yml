@@ -9,12 +9,11 @@
 # rv32 and rejects a 64-bit ELF outright. Pinned to a commit so the image is
 # reproducible.
 #
-# Published to GHCR, not Docker Hub: this repository has no Docker Hub
-# credentials (only NUGET_USER), and GHCR takes the workflow's own GITHUB_TOKEN,
-# so publishing needs nothing provisioned. The package inherits the repository's
-# visibility on first push - if the repo is private, flip the package to public
-# once under Packages -> openvm-runner -> Package settings, or consumers cannot
-# pull it.
+# Published to Docker Hub, alongside the other images the guests use
+# (nethermindeth/zisk, nethermindeth/bflat-riscv64). Needs DOCKER_HUB_USERNAME
+# and DOCKER_HUB_PASSWORD in this repository or granted to it from the org; the
+# preflight step below says so plainly instead of letting the login step fail
+# with a bare "Username and password required".
 #
 # Manual only. After publishing, pin the new digest in the consumers
 # (nethermind's Nethermind.Stateless.OpenVmGuest/Makefile, OPENVM_IMAGE).
@@ -32,13 +31,12 @@ on:
         type: string
         default: v2.1.0-rv64
       push:
-        description: Push to GHCR (off = build only, to check it compiles)
+        description: Push to Docker Hub (off = build only, to check it compiles)
         type: boolean
         default: false
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   runner:
@@ -51,13 +49,23 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
+      - name: Check the Docker Hub credentials are present
+        if: inputs.push
+        env:
+          USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}
+        run: |
+          [ -n "$USERNAME" ] && [ -n "$PASSWORD" ] || {
+            echo "::error::DOCKER_HUB_USERNAME / DOCKER_HUB_PASSWORD are not set for this repository. Add them, or run with push off to build only."
+            exit 1
+          }
+
+      - name: Log in to Docker Hub
         if: inputs.push
         uses: docker/login-action@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
       - name: Build and push
         id: build
@@ -66,7 +74,7 @@ jobs:
           context: runner
           build-args: OPENVM_REV=${{ inputs.openvm_rev }}
           push: ${{ inputs.push }}
-          tags: ghcr.io/nethermindeth/openvm-runner:${{ inputs.image_tag }}
+          tags: nethermindeth/openvm-runner:${{ inputs.image_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -75,5 +83,5 @@ jobs:
         run: |
           echo "### Pin this in the consumers" >> "$GITHUB_STEP_SUMMARY"
           echo '```make' >> "$GITHUB_STEP_SUMMARY"
-          echo "OPENVM_IMAGE ?= ghcr.io/nethermindeth/openvm-runner:${{ inputs.image_tag }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "OPENVM_IMAGE ?= nethermindeth/openvm-runner:${{ inputs.image_tag }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"

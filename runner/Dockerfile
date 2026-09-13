@@ -7,7 +7,7 @@
 # Consumers would each have to build the SDK from source, which is the long
 # pole in any job that touches it. They pull this instead.
 #
-#   docker run --rm -v "$PWD:/n" ghcr.io/nethermindeth/openvm-runner:v2.1.0-rv64 \
+#   docker run --rm -v "$PWD:/n" nethermindeth/openvm-runner:v2.1.0-rv64 \
 #       /n/nethermind /n/openvm.toml /n/input.raw
 #
 # The input is RAW SSZ, as for SP1: the test bucket's .ssz files are ZisK-framed.
