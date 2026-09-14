@@ -10,6 +10,9 @@
 #   docker run --rm -v "$PWD:/n" nethermindeth/openvm-runner:v2.1.0-rv64 \
 #       /n/nethermind /n/openvm.toml /n/input.raw
 #
+# Pass "-" instead of a config path to use the extension set shipped in the
+# image (/openvm.toml), which matches what the bindings expose.
+#
 # The input is RAW SSZ, as for SP1: the test bucket's .ssz files are ZisK-framed.
 #
 # OPENVM_REV is on the rv64 line (branch develop-v2.1.0). `main` is still rv32
@@ -37,4 +40,6 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates libssl3 \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/target/release/openvm-runelf /usr/local/bin/openvm-runelf
+# Default extension set, used when the caller passes "-" for the config.
+COPY openvm.toml /openvm.toml
 ENTRYPOINT ["/usr/local/bin/openvm-runelf"]

@@ -4,8 +4,11 @@ use openvm_sdk_config::SdkVmConfig;
 
 fn main() -> eyre::Result<()> {
     let a: Vec<String> = std::env::args().collect();
-    if a.len() < 4 { eyre::bail!("usage: openvm-runelf <elf> <openvm.toml> <input-bytes>"); }
-    let cfg: AppConfig<SdkVmConfig> = toml::from_str(&std::fs::read_to_string(&a[2])?)?;
+    if a.len() < 4 { eyre::bail!("usage: openvm-runelf <elf> <openvm.toml|-> <input-bytes>"); }
+    // "-" means the configuration shipped in the image: the extension set the
+    // bindings are built against. A guest that pins its own set passes a path.
+    let cfg_path = if a[2] == "-" { "/openvm.toml".to_string() } else { a[2].clone() };
+    let cfg: AppConfig<SdkVmConfig> = toml::from_str(&std::fs::read_to_string(&cfg_path)?)?;
     let sdk = Sdk::new(cfg, AggregationSystemParams::default())?;
     let mut stdin = StdIn::default();
     stdin.write_bytes(&std::fs::read(&a[3])?);
