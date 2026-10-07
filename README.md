@@ -69,7 +69,9 @@ All 19 accelerators, plus both IO entry points:
 custom-0 and custom-1 instructions to catch a silent fallback to portable Rust.
 CI then links a real bflat guest that calls all 21 through direct P/Invoke
 (`tests/integration/guest.cs`) — which is what proves the symbols not only
-exist but survive a guest's link.
+exist but survive a guest's link. The 256-bit integer shims are also executed:
+`tests/integration/u256.cs` runs each against precomputed vectors on the
+OpenVM runner, in place and out of place.
 
 ## The output window is 32 bytes
 
