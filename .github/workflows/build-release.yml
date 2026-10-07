@@ -131,6 +131,12 @@ jobs:
             -o guest
           riscv64-linux-gnu-readelf -h guest | grep -E 'Class:|Machine:|Entry point'
           ls -la guest
+          bflat-riscv64/src/bflat/bin/Debug/net10.0/bflat build \
+            bflat-openvm/tests/integration/u256.cs \
+            --os linux --arch riscv64 --libc openvm --stdlib dotnet \
+            --no-pie --no-pthread -Ot \
+            --extlib "$PWD/bflat-openvm/output/libopenvm.bflat.manifest" \
+            -o u256
 
       - name: Upload the linked guest
         # Keeping the image makes an "N instructions the VM cannot decode"
@@ -138,7 +144,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: integration-guest
-          path: guest
+          path: |
+            guest
+            u256
 
       - name: Check the linked image
         # --no-atomics is now enforced: bflat's nothread module displaces the
@@ -149,6 +157,36 @@ jobs:
         # the build over.
         run: |
           python3 bflat-openvm/tests/integration/check_image.py guest --require-custom --no-atomics
+
+  run-u256-vectors:
+    # guest.cs only links the u256 shims; this executes them. A wrong funct7 or
+    # register order in openvm_intrinsics.S links fine and computes the wrong
+    # thing, so the vector guest runs on the OpenVM runner and must report zero
+    # mismatches over its 444 checks.
+    name: Run the u256 vectors on OpenVM
+    needs: link-guest
+    runs-on: ubuntu-latest
+    env:
+      OPENVM_IMAGE: nethermindeth/openvm-runner:v2.1.0-rv64@sha256:d8209a5db5d59df6d6f5899b2ce6866f81c30bdc3df952dc78243b8316706baa
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Download the linked guests
+        uses: actions/download-artifact@v4
+        with:
+          name: integration-guest
+          path: guests
+
+      - name: Execute the vector guest
+        run: |
+          cp runner/openvm.toml guests/
+          : > guests/empty.raw
+          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/u256 /n/openvm.toml /n/empty.raw | tail -1)
+          echo "$out"
+          # Mismatches, then checks, as little-endian u64s.
+          [ "$out" = "public_values=0000000000000000bc0100000000000000000000000000000000000000000000" ] \
+            || { echo "::error::u256 vectors failed: $out"; exit 1; }
 
   build-nupkg:
     name: Build NuGet package
