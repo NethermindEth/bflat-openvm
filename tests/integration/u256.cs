@@ -3,10 +3,10 @@
 //
 // guest.cs proves the symbols link; it never executes them, so a wrong funct7,
 // a swapped register or a misread operand would still pass there. This guest
-// executes each shim and compares limb for limb. Every operation also runs once
-// more with the result written over its first operand, the in-place form a
-// caller uses on a stack slot, which only holds if the instruction reads both
-// operands before it writes.
+// executes each shim and compares limb for limb. Every operation also runs with
+// the result written over its first operand and over its second, the in-place
+// forms a caller uses on a stack slot, which only hold if the instruction reads
+// both operands before it writes.
 //
 // The public output is 32 bytes: the number of mismatches, then the number of
 // checks, each a little-endian u64, then zeros. CI asserts zero mismatches.
@@ -540,23 +540,30 @@ internal static unsafe class Program
             {
                 ulong* v = vectors + row;
                 ulong* expected = v + 9;
-                for (int i = 0; i < 4; i++)
-                {
-                    a[i] = v[1 + i];
-                    b[i] = v[5 + i];
-                    r[i] = 0xdeadbeefdeadbeefUL;
-                }
-
+                Load(v, a, b, r);
                 U256.Run(v[0], r, a, b);
                 mismatches += Differs(r, expected);
                 U256.Run(v[0], a, a, b);
                 mismatches += Differs(a, expected);
-                checks += 2;
+                Load(v, a, b, r);
+                U256.Run(v[0], b, a, b);
+                mismatches += Differs(b, expected);
+                checks += 3;
             }
         }
 
         U256.Publish(mismatches, checks);
         return 0;
+    }
+
+    private static void Load(ulong* row, ulong* a, ulong* b, ulong* r)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            a[i] = row[1 + i];
+            b[i] = row[5 + i];
+            r[i] = 0xdeadbeefdeadbeefUL;
+        }
     }
 
     private static ulong Differs(ulong* actual, ulong* expected) =>

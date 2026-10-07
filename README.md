@@ -71,7 +71,7 @@ CI then links a real bflat guest that calls all 21 through direct P/Invoke
 (`tests/integration/guest.cs`) — which is what proves the symbols not only
 exist but survive a guest's link. The 256-bit integer shims are also executed:
 `tests/integration/u256.cs` runs each against precomputed vectors on the
-OpenVM runner, in place and out of place.
+OpenVM runner, out of place and over either operand.
 
 ## The output window is 32 bytes
 
