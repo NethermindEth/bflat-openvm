@@ -19,6 +19,14 @@ on:
           - "No"
           - Staging
           - Production
+      openvm_ref:
+        description: OpenVM version the package is labelled with
+        type: string
+        default: v2.1.0
+
+env:
+  # push and pull_request runs have no inputs; they get the default.
+  OPENVM_REF: ${{ inputs.openvm_ref || 'v2.1.0' }}
 
 jobs:
   build-libopenvm:
@@ -254,7 +262,7 @@ jobs:
       NUGET_URL: ${{ inputs.publish == 'Staging' && 'https://int.nugettest.org' || 'https://www.nuget.org' }}
       NUGET_SOURCE: ${{ inputs.publish == 'Staging' && 'https://apiint.nugettest.org' || 'https://api.nuget.org' }}/v3/index.json
     outputs:
-      version: ${{ steps.pkg.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -273,28 +281,38 @@ jobs:
           mv libopenvm.a src/runtime/runtimes/linux-riscv64/native/
           mv libopenvm.bflat.manifest src/runtime/
 
-      - name: Inject package_version into the manifest
+      - name: Detect version
+        id: version
         run: |
-          PREFIX=$(grep -oP '(?<=<VersionPrefix>)[^<]+' src/runtime/Directory.Build.props | tr -d '[:space:]')
-          SUFFIX=$(grep -oP '(?<=<VersionSuffix>)[^<]+' src/runtime/Directory.Build.props | tr -d '[:space:]')
-          VERSION="$PREFIX${SUFFIX:+-$SUFFIX}"
+          # Version tag (v2.1.0, v2.2.0-rc.1): tag without v + .<run>
+          # Commit hash: 0.0.0-dev-<short hash>.<run>
+          # Branch: 0.0.0-dev-<branch>.<run>
+          if [[ "$OPENVM_REF" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+          elif [[ "$OPENVM_REF" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+            version="0.0.0-dev-${OPENVM_REF:0:7}"
+          else
+            version="0.0.0-dev-$(printf '%s' "$OPENVM_REF" | tr -c '0-9A-Za-z-' '-')"
+          fi
+          version+=".${GITHUB_RUN_NUMBER}"
+          echo "Detected version $version"
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Inject openvm_ref and package_version into the manifest
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
 
           MANIFEST=src/runtime/libopenvm.bflat.manifest
-          jq --arg version "$VERSION" '. + {package_version: $version}' \
+          jq --arg ref "$OPENVM_REF" --arg version "$VERSION" \
+            '. + {openvm_ref: $ref, package_version: $version}' \
             "$MANIFEST" > "$MANIFEST.tmp"
           mv "$MANIFEST.tmp" "$MANIFEST"
 
       - name: Pack
         working-directory: src/runtime
-        run: dotnet pack Nethermind.OpenVM.Runtime.csproj -c release
-
-      - name: Get package version
-        id: pkg
-        working-directory: src/runtime
         run: |
-          PKG=$(ls ./artifacts/package/release/*.nupkg | head -1)
-          VERSION=$(basename "$PKG" .nupkg | sed 's/^Nethermind\.OpenVM\.Runtime\.//')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          dotnet pack Nethermind.OpenVM.Runtime.csproj -c release \
+            -p:Version=${{ steps.version.outputs.version }}
 
       - name: NuGet login
         if: github.event_name == 'workflow_dispatch' && inputs.publish != 'No'
@@ -353,6 +371,7 @@ jobs:
 
             **Package**: `Nethermind.OpenVM.Runtime`
             **Version**: `${{ needs.build-nupkg.outputs.version }}`
+            Built for OpenVM ref: `${{ env.OPENVM_REF }}`
 
             Implements the Keccak-256 and SHA-256 entry points of the eth-act
             zkVM accelerator standard on OpenVM's custom instructions.
