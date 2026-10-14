@@ -13,8 +13,9 @@
 # (nethermindeth/zisk, nethermindeth/bflat-riscv64). Logs in with OIDC: needs
 # the DOCKERHUB_ORGANIZATION and DOCKERHUB_OIDC_CONNECTIONID variables in this
 # repository or granted to it from the org, and a Docker Hub OIDC connection
-# that trusts this repository; the preflight step below says so plainly instead
-# of letting the login step fail with a bare "Username required".
+# that trusts this repository's docker-hub environment, which a push runs in;
+# the preflight step below says so plainly instead of letting the login step
+# fail with a bare "Username required".
 #
 # Manual only. After publishing, pin the new digest in the consumers
 # (nethermind's Nethermind.Stateless.OpenVmGuest/Makefile, OPENVM_IMAGE).
@@ -43,6 +44,8 @@ jobs:
   runner:
     name: openvm-runner
     runs-on: ubuntu-latest
+    # Pushes authenticate with Docker Hub OIDC, which trusts only this environment
+    environment: ${{ inputs.push && 'docker-hub' || '' }}
     permissions:
       contents: read
       id-token: write
