@@ -19,6 +19,7 @@
  * Copyright (C) 2026 Demerzel Solutions Limited (Nethermind)
  */
 #include <inttypes.h>
+#include <signal.h>
 #include <string.h>
 
 #include "common.h"
@@ -206,11 +207,19 @@ void zkvm_keccakf(void *state) /* openvm */
 
 extern void syscall_keccak_f(void *state);
 
+/* The platform interface (the functions bflat's pal calls). */
+extern void zkvm_platform_exit(long code);
+
 int main(void)
 {
     /* One shot: _start clobbers sp/gp and never returns, so it only runs
      * in the child. Any verdict other than OK surfaces as its own code. */
     EXPECT_EXIT(OK, zkvm_module_start());
+
+    /* zkvm_platform_exit is OpenVM's TERMINATE, a custom-0 instruction that
+     * qemu-user does not know: it must trap, not fall back to a Linux exit. */
+    EXPECT_SIGNAL(SIGILL, zkvm_platform_exit(0));
+    EXPECT_SIGNAL(SIGILL, zkvm_platform_exit(3));
 
 
     /* syscall_keccak_f is a tail call: the state pointer must arrive

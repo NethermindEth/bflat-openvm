@@ -15,13 +15,6 @@
  */
 .option norelax
 
-/* Marker read (as a weak symbol reference) by pal/module.c and rhp/module.c
- * to pick OpenVM's custom-instruction protocol - TERMINATE and the PrintStr
- * phantom - out of the shared objects those modules are built as. The value
- * is never dereferenced, only tested against NULL. */
-.global __zkvm_target_openvm
-.set    __zkvm_target_openvm, 1
-
 .section .rodata
     .balign 8
 app_str:
@@ -48,17 +41,23 @@ syscall_keccak_f:
     .size   syscall_keccak_f, .-syscall_keccak_f
 
 
-/* OpenVM's custom-0 instructions, kept out of the shared pal/rhp objects so
- * that SP1 images (which decode every word of .text) never carry them.
- * Called from pal/module.c through weak references.
- *
- * zkvm_openvm_terminate(long code): TERMINATE (custom-0, funct3 0). The exit
+/* ------------------------------------------------------------------------
+ * The platform interface of bflat's modules (docs/manifest.md in
+ * bflat-riscv64, "Platform interface"): OpenVM's custom-0 instructions. They
+ * stay out of bflat's shared objects, so that no other platform's image
+ * carries an encoding it cannot decode (SP1 transpiles every word of .text up
+ * front and rejects custom opcodes). OpenVM defines no
+ * zkvm_platform_syscall: it has no ecall handler at all, so pal's syscall
+ * fails instead.
+ * ------------------------------------------------------------------------ */
+
+/* zkvm_platform_exit(long code): TERMINATE (custom-0, funct3 0). The exit
  * code is an immediate, so a runtime code collapses to OpenVM's two
  * outcomes: 0 success, 1 failure (openvm::process::exit / panic). */
-.section .text.zkvm_openvm_terminate,"ax",@progbits
-.global zkvm_openvm_terminate
-.type   zkvm_openvm_terminate, @function
-zkvm_openvm_terminate:
+.section .text.zkvm_platform_exit,"ax",@progbits
+.global zkvm_platform_exit
+.type   zkvm_platform_exit, @function
+zkvm_platform_exit:
     .cfi_startproc
     beqz    a0, 1f
     .insn   i 0x0b, 0, x0, x0, 1
@@ -66,20 +65,21 @@ zkvm_openvm_terminate:
 1:  .insn   i 0x0b, 0, x0, x0, 0
 3:  j       3b
     .cfi_endproc
-    .size   zkvm_openvm_terminate, .-zkvm_openvm_terminate
+    .size   zkvm_platform_exit, .-zkvm_platform_exit
 
-/* zkvm_openvm_print(const char *buf, long len): the PrintStr phantom -
- * custom-0, funct3 3, imm 1, buffer in rd, length in rs1
- * (openvm/extensions/riscv/guest/src/io.rs raw_print_str_from_bytes). */
-.section .text.zkvm_openvm_print,"ax",@progbits
-.global zkvm_openvm_print
-.type   zkvm_openvm_print, @function
-zkvm_openvm_print:
+/* zkvm_platform_write(int fd, const char *buf, int len): the PrintStr
+ * phantom - custom-0, funct3 3, imm 1, buffer in rd, length in rs1
+ * (openvm/extensions/riscv/guest/src/io.rs raw_print_str_from_bytes). It has
+ * a single output channel, so fd is ignored. */
+.section .text.zkvm_platform_write,"ax",@progbits
+.global zkvm_platform_write
+.type   zkvm_platform_write, @function
+zkvm_platform_write:
     .cfi_startproc
-    .insn   i 0x0b, 3, a0, a1, 1
+    .insn   i 0x0b, 3, a1, a2, 1  # rd = buf (a1), rs1 = len (a2)
     ret
     .cfi_endproc
-    .size   zkvm_openvm_print, .-zkvm_openvm_print
+    .size   zkvm_platform_write, .-zkvm_platform_write
 
 .section .text.init
 .global _start
@@ -101,8 +101,8 @@ _start:
     li      a0, 1            # argc = 1
     la      a1, argv_vec     # argv = &argv_vec[0]
     call    noos_start_main
-    # Unreachable: __libc_start_main exits through musl's exit(), which
-    # pal/module.c wraps into the OpenVM TERMINATE instruction. Kept as a
+    # Unreachable: noos_start_main exits through musl's exit(), which pal
+    # turns into zkvm_platform_exit, the TERMINATE above. Kept as a
     # backstop - TERMINATE with exit code 0 (custom-0 opcode 0x0b, funct3 0,
     # rd = rs1 = x0, imm = exit code; see openvm_platform::rust_rt).
     .insn   i 0x0b, 0, x0, x0, 0
