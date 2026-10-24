@@ -58,7 +58,7 @@
       "noos",
       "guest_subst"
     ],
-    "flags": ["no-atomics", "noos", "no-console", "no-fpu"],
+    "flags": ["no-atomics", "noos", "no-console"],
     "linker_script": "openvm.ld",
     "entry": "openvm_entry.o"
   }
