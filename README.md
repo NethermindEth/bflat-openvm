@@ -132,7 +132,7 @@ curves drag in OpenVM's guest runtime (`_start`, `mem*`, `sys_alloc_aligned`),
 and `-Z build-std` compiles `compiler_builtins` for a target with no libm, so
 it exports the entire C math surface as well. Every one of those collides with
 the guest: musl owns the math surface and `mem*`,
-`modules/zkvm_openvm/module.S` owns `_start`, and bflat's `rust_sys` module
+`platform/entry.S` owns `_start`, and bflat's `rust_sys` module
 wraps `sys_alloc_aligned` so OpenVM's bump allocator draws from pal's heap
 instead of opening a second one.
 

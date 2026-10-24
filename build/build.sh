@@ -77,7 +77,7 @@ cp "${RUST_LIB}" "${OUTPUT_DIR}/libopenvm.a"
 #     symbols) plus bcmp.
 #
 # Every one of those collides with the guest: musl defines the math surface and
-# mem*, modules/zkvm_openvm/module.S defines _start, and bflat's rust_sys
+# mem*, platform/entry.S defines _start, and bflat's rust_sys
 # module wraps sys_alloc_aligned so OpenVM's bump allocator draws from pal's
 # heap rather than opening a second one. A duplicate-symbol error is the good
 # outcome; the bad one is this archive silently winning over the math surface
