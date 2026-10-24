@@ -124,8 +124,8 @@ jobs:
 
       - name: Build bflat and its native modules
         working-directory: bflat-riscv64
-        # The modules leg is what produces lib/linux/riscv64/openvm/{script.ld,
-        # entrypoint.o} - the memory map this test is here to link against.
+        # The modules leg is what produces lib/modules/zkvm_openvm/{script.ld,
+        # module.o} - the memory map this test is here to link against.
         run: |
           ./build.sh modules riscv64 perf 10
           ./build.sh bflat riscv64 perf 10
@@ -136,7 +136,7 @@ jobs:
           # The layout copy of the linker script is what the link actually
           # uses; print both so a stale layout is visible rather than
           # mystifying.
-          sha256sum bflat-riscv64/src/bflat/bin/Debug/net10.0/lib/linux/riscv64/openvm/script.ld \
+          sha256sum bflat-riscv64/src/bflat/bin/Debug/net10.0/lib/modules/zkvm_openvm/script.ld \
                     bflat-riscv64/src/bflat/modules/zkvm_openvm/script.ld
           cp bflat-openvm/bflat-manifest.json bflat-openvm/output/libopenvm.bflat.manifest
           bflat-riscv64/src/bflat/bin/Debug/net10.0/bflat build \
@@ -298,13 +298,13 @@ jobs:
           echo "Detected version $version"
           echo "version=$version" >> $GITHUB_OUTPUT
 
-      - name: Inject openvm_ref and package_version into the manifest
+      - name: Inject openvm_ref and the package version into the manifest
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
           MANIFEST=src/runtime/libopenvm.bflat.manifest
           jq --arg ref "$OPENVM_REF" --arg version "$VERSION" \
-            '. + {openvm_ref: $ref, package_version: $version}' \
+            '.version = $version | .metadata.openvm_ref = $ref' \
             "$MANIFEST" > "$MANIFEST.tmp"
           mv "$MANIFEST.tmp" "$MANIFEST"
 
