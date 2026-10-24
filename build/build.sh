@@ -173,6 +173,9 @@ echo "OpenVM custom-1 instructions: ${C1}"
 
 cp "${ROOT_DIR}/bflat-manifest.json" "${OUTPUT_DIR}/libopenvm.bflat.manifest"
 
+# The entry point, the memory map and the platform manifest (platform/).
+AS="${AS}" "${ROOT_DIR}/platform/build.sh" "${OUTPUT_DIR}" || fail "platform build failed"
+
 echo "Build completed"
 echo "Output: ${OUTPUT_DIR}/libopenvm.a"
 echo "        ${OUTPUT_DIR}/libopenvm.bflat.manifest"

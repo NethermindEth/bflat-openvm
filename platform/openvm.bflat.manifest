@@ -1,0 +1,65 @@
+{
+  "$schema": "https://raw.githubusercontent.com/NethermindEth/bflat-riscv64/master/src/bflat/bflat-manifest.schema.json",
+  "schema": 2,
+  "name": "openvm",
+  "version": "1.0.0",
+  "description": "The OpenVM platform for bflat guests",
+  "link": {
+    "wrap": [
+      {
+        "symbol": "memcpy",
+        "note": "musl's memcpy moves 32-bit words, and OpenVM has no DMA copy to hand copies to; entry.S carries a 64-bit __wrap_memcpy fitted to the alignment rules of OpenVM."
+      },
+      {
+        "symbol": "memmove",
+        "note": "Likewise for musl's memmove (an overlap check in front of memcpy) and memset (32-bit stores): __wrap_memmove and __wrap_memset sit beside __wrap_memcpy in entry.S."
+      },
+      "memset"
+    ]
+  },
+  "ilc": {"defines": ["ZKVM_OPENVM"]},
+  "codegen": {
+    "abi": "lp64",
+    "isa": {"disable": ["c", "a", "f", "d", "zba", "zbb", "zbs", "zicond"]},
+    "options": [
+      {
+        "value": "RiscV64ElideLeafRaSave=1",
+        "when": {"optimize": true},
+        "note": "Elide the RA spill/reload and frame in leaf methods (dotnet-riscv patches 23 and 31). Sound only on a single-threaded deterministic guest with no GC thread suspension and no return-address hijacking."
+      },
+      {
+        "value": "EnableRiscV64Compressed=0",
+        "note": "The decoder has no C extension, and a single-threaded guest needs no atomics: the managed .text stays 32-bit and lock-free (dotnet-riscv fixups 24/25). Check with --error-on-compressed / --error-on-atomic."
+      },
+      "EnableRiscV64Atomic=0",
+      {
+        "value": "JitZkBumpAddr=bffefff8",
+        "note": "Per-site inline allocation (dotnet-riscv fixup 26): the cell of the bump pointer, at a fixed address. It MUST equal g_zk_bump_ptr in the linker script. OpenVM has the full 4 GiB u32 range (MEM_BITS 32 on the develop-v2.1.0 line); its RAM stays up to 0xbfff0000, and the cell is 8 bytes below it."
+      }
+    ]
+  },
+  "platform": {
+    "aliases": {"libc": "openvm"},
+    "base": {"os": "linux", "arch": "riscv64", "libc": "musl"},
+    "requires": [
+      "nofp",
+      "ubootstrap",
+      "stdcppshim",
+      "rhp",
+      "gs_cookie",
+      "rhp_native",
+      "pal",
+      "eh",
+      "tls",
+      "rng_stupid",
+      "rust_sys",
+      "ugc-zero",
+      "nothread",
+      "noos",
+      "zisk_subst"
+    ],
+    "flags": ["no-atomics", "noos", "no-console", "no-fpu"],
+    "linker_script": "openvm.ld",
+    "entry": "openvm_entry.o"
+  }
+}

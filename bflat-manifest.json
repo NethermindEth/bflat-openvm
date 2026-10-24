@@ -4,6 +4,12 @@
   "name": "libopenvm",
   "version": "1.0.0",
   "description": "OpenVM accelerators (libopenvm) for bflat guests",
-  "when": {"arch": "riscv64", "os": "linux", "platform": "zkvm_openvm"},
-  "objects": ["libopenvm.a"]
+  "when": {"platform": "openvm"},
+  "objects": [
+    {
+      "file": "libopenvm.a",
+      "group": "pre-entry",
+      "note": "In front of the linker script, where bflat linked --extlib static libraries before schema 2."
+    }
+  ]
 }

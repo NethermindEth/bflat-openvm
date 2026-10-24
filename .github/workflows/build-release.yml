@@ -66,7 +66,31 @@ jobs:
           path: |
             output/libopenvm.a
             output/libopenvm.bflat.manifest
+            output/openvm_entry.o
+            output/openvm.ld
+            output/openvm.bflat.manifest
           if-no-files-found: error
+
+  platform-tests:
+    # platform/entry.S, the bflat entry point of the guest: _start for the
+    # OpenVM entry, and the 64-bit memcpy/memmove/memset, cross-compiled and run under
+    # qemu-user. The tests came here from bflat-riscv64 with the entry point.
+    name: Platform unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install the RISC-V toolchain and qemu-user
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-riscv64-linux-gnu qemu-user-static
+
+      - name: Build the platform files
+        run: platform/build.sh
+
+      - name: Run the unit tests
+        run: tests/platform/run.sh
 
   link-guest:
     # The surface check in build-libopenvm proves the symbols exist. This proves
@@ -124,8 +148,10 @@ jobs:
 
       - name: Build bflat and its native modules
         working-directory: bflat-riscv64
-        # The modules leg is what produces lib/modules/zkvm_openvm/{script.ld,
-        # module.o} - the memory map this test is here to link against.
+        # The modules leg produces the lib/modules that the OpenVM platform
+        # requires. The platform itself - entry point and memory map - is in
+        # this repository's output/ (platform/build.sh), next to libopenvm,
+        # and --extlib reads both manifests from there.
         run: |
           ./build.sh modules riscv64 perf 10
           ./build.sh bflat riscv64 perf 10
@@ -133,11 +159,6 @@ jobs:
       - name: Link the guest against libopenvm
         run: |
           set -e
-          # The layout copy of the linker script is what the link actually
-          # uses; print both so a stale layout is visible rather than
-          # mystifying.
-          sha256sum bflat-riscv64/src/bflat/bin/Debug/net10.0/lib/modules/zkvm_openvm/script.ld \
-                    bflat-riscv64/src/bflat/modules/zkvm_openvm/script.ld
           cp bflat-openvm/bflat-manifest.json bflat-openvm/output/libopenvm.bflat.manifest
           bflat-riscv64/src/bflat/bin/Debug/net10.0/bflat build \
             bflat-openvm/tests/integration/guest.cs \
@@ -278,8 +299,8 @@ jobs:
       - name: Move artifacts into the package project
         run: |
           mkdir -p src/runtime/runtimes/linux-riscv64/native
-          mv libopenvm.a src/runtime/runtimes/linux-riscv64/native/
-          mv libopenvm.bflat.manifest src/runtime/
+          mv libopenvm.a libopenvm.bflat.manifest openvm_entry.o openvm.ld openvm.bflat.manifest \
+             src/runtime/runtimes/linux-riscv64/native/
 
       - name: Detect version
         id: version
@@ -298,15 +319,16 @@ jobs:
           echo "Detected version $version"
           echo "version=$version" >> $GITHUB_OUTPUT
 
-      - name: Inject openvm_ref and the package version into the manifest
+      - name: Inject openvm_ref and the package version into the manifests
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          MANIFEST=src/runtime/libopenvm.bflat.manifest
-          jq --arg ref "$OPENVM_REF" --arg version "$VERSION" \
-            '.version = $version | .metadata.openvm_ref = $ref' \
-            "$MANIFEST" > "$MANIFEST.tmp"
-          mv "$MANIFEST.tmp" "$MANIFEST"
+          for MANIFEST in src/runtime/runtimes/linux-riscv64/native/*.bflat.manifest ; do
+            jq --arg ref "$OPENVM_REF" --arg version "$VERSION" \
+              '.version = $version | .metadata.openvm_ref = $ref' \
+              "$MANIFEST" > "$MANIFEST.tmp"
+            mv "$MANIFEST.tmp" "$MANIFEST"
+          done
 
       - name: Pack
         working-directory: src/runtime
@@ -367,6 +389,9 @@ jobs:
             nupkg/*.nupkg
             libopenvm/libopenvm.a
             libopenvm/libopenvm.bflat.manifest
+            libopenvm/openvm_entry.o
+            libopenvm/openvm.ld
+            libopenvm/openvm.bflat.manifest
           body: |
             OpenVM zkVM accelerators for bflat guests.
 

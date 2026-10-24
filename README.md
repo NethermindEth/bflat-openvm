@@ -31,6 +31,23 @@ Dependencies are pinned to `develop-v2.1.0`, OpenVM's live RV64 line — not
 `develop-v2.1.0-rv64` (an older snapshot of the same work) and not `main`,
 which is still RV32 and rejects a 64-bit ELF outright.
 
+## Platform
+
+This package also defines the OpenVM target for bflat: `--libc openvm` selects
+the platform that `platform/` describes, so bflat itself knows nothing about
+OpenVM. `platform/build.sh` builds it into `output/` (`openvm_entry.o`, `openvm.ld` and `openvm.bflat.manifest`):
+
+- `entry.S` is the guest's `_start` and the OpenVM halt protocol, plus the 64-bit `memcpy`/`memmove`/`memset`, the TERMINATE and PrintStr intrinsics.
+- the linker script is the OpenVM memory map;
+- the platform manifest gives the instruction set, the ABI, the RyuJIT
+  options, the defines and the post-link steps, and lists the bflat modules
+  that the guest needs (format: `docs/manifest.md` in bflat-riscv64).
+
+`--extlib` with a `.bflat.manifest` path reads every `*.bflat.manifest` in that
+directory, so the platform and the bindings come together. A guest that does
+not use the accelerators can be built with the platform files alone.
+`tests/platform/run.sh` runs the unit tests of the entry point under qemu-user.
+
 ## Usage
 
 ```console
