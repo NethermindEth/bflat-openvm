@@ -459,6 +459,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          # The commit that was built; the default is the head of the default branch.
+          target_commitish: ${{ github.sha }}
           tag_name: v${{ needs.build-nupkg.outputs.version }}
           name: Nethermind.OpenVM.Runtime ${{ needs.build-nupkg.outputs.version }}
           files: |
