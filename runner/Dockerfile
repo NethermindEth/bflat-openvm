@@ -7,11 +7,11 @@
 # Consumers would each have to build the SDK from source, which is the long
 # pole in any job that touches it. They pull this instead.
 #
-#   docker run --rm -v "$PWD:/n" nethermindeth/openvm-runner:v2.1.0-rv64 \
-#       /n/nethermind /n/openvm.toml /n/input.raw
+#   docker run --rm -v "$PWD:/n" nethermindeth/openvm-runner:<tag> \
+#       /n/nethermind /n/input.raw
 #
-# Pass "-" instead of a config path to use the extension set shipped in the
-# image (/openvm.toml), which matches what the bindings expose.
+# The VM configuration is SdkVmConfig::standard() of the SDK, plus the division
+# hint (src/hints.rs). The guest needs no openvm.toml.
 #
 # The input is RAW SSZ, as for SP1: the test bucket's .ssz files are ZisK-framed.
 #
@@ -41,6 +41,4 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates libssl3 \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/target/release/openvm-runelf /usr/local/bin/openvm-runelf
-# Default extension set, used when the caller passes "-" for the config.
-COPY openvm.toml /openvm.toml
 ENTRYPOINT ["/usr/local/bin/openvm-runelf"]
