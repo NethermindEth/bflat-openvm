@@ -28,6 +28,9 @@ env:
   # push and pull_request runs have no inputs; they get the default.
   OPENVM_REF: ${{ inputs.openvm_ref || 'v2.1.0' }}
 
+permissions:
+  contents: read
+
 jobs:
   build-libopenvm:
     name: Build libopenvm
@@ -373,7 +376,8 @@ jobs:
     name: Sign the package
     if: github.event_name == 'workflow_dispatch' && inputs.publish != 'No'
     needs: build-nupkg
-    uses: NethermindEth/bflat-riscv64/.github/workflows/sign.yml@master
+    permissions: {}
+    uses: NethermindEth/bflat-riscv64/.github/workflows/sign.yml@34a3e73ad5b2f34a868f5793172dc4a3a97bf382 # master
     with:
       lists: bflat-signature-lists
     secrets:
@@ -417,7 +421,7 @@ jobs:
         run: python3 scripts/sign_package.py embed signature nupkg/*.nupkg
 
       - name: NuGet login
-        uses: nuget/login@v1
+        uses: nuget/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
         id: login
         with:
           user: ${{ secrets.NUGET_USER }}
@@ -457,7 +461,7 @@ jobs:
           path: libopenvm
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           # The commit that was built; the default is the head of the default branch.
           target_commitish: ${{ github.sha }}
