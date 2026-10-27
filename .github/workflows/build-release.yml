@@ -182,10 +182,10 @@ jobs:
     # thing, so the vector guest runs on the OpenVM runner and must report zero
     # mismatches over its 444 checks.
     name: Run the u256 vectors on OpenVM
-    needs: link-guest
+    needs: [link-guest, run-divrem-vectors]
     runs-on: ubuntu-latest
     env:
-      OPENVM_IMAGE: nethermindeth/openvm-runner:v2.1.0-rv64@sha256:d8209a5db5d59df6d6f5899b2ce6866f81c30bdc3df952dc78243b8316706baa
+      OPENVM_IMAGE: openvm-divrem-test
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -196,12 +196,18 @@ jobs:
           name: integration-guest
           path: guests
 
+      - name: Load the runner image
+        uses: actions/download-artifact@v4
+        with:
+          name: openvm-runner
+
+      - name: Load the runner
+        run: gunzip -c openvm-runner.tar.gz | docker load
+
       - name: Execute the vector guest
         run: |
           : > guests/empty.raw
-          # "-": the image of before takes the configuration it ships, the
-          # standard one. Remove the argument with the next image.
-          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/u256 - /n/empty.raw | tail -1)
+          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/u256 /n/empty.raw | tail -1)
           echo "$out"
           # Mismatches, then checks, as little-endian u64s.
           [ "$out" = "public_values=0000000000000000bc0100000000000000000000000000000000000000000000" ] \
@@ -212,10 +218,10 @@ jobs:
     # on OpenVM itself, against the same reference, adversarial vectors
     # included.
     name: Run secp256k1 recovery on OpenVM
-    needs: link-guest
+    needs: [link-guest, run-divrem-vectors]
     runs-on: ubuntu-latest
     env:
-      OPENVM_IMAGE: nethermindeth/openvm-runner:v2.1.0-rv64@sha256:d8209a5db5d59df6d6f5899b2ce6866f81c30bdc3df952dc78243b8316706baa
+      OPENVM_IMAGE: openvm-divrem-test
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -226,10 +232,18 @@ jobs:
           name: integration-guest
           path: guests
 
+      - name: Load the runner image
+        uses: actions/download-artifact@v4
+        with:
+          name: openvm-runner
+
+      - name: Load the runner
+        run: gunzip -c openvm-runner.tar.gz | docker load
+
       - name: Run the vectors
         run: |
           expected=$(python3 tests/secp256k1/test_ecrecover.py --openvm-vectors guests/vectors.bin)
-          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/secp256k1-guest - /n/vectors.bin | tail -1)
+          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/secp256k1-guest /n/vectors.bin | tail -1)
           echo "$out"
           [ "$out" = "public_values=$expected" ]             || { echo "::error::secp256k1 vectors failed: expected $expected"; exit 1; }
 
@@ -250,6 +264,18 @@ jobs:
 
       - name: Execute the vectors
         run: bash tests/divrem/run.sh openvm-divrem-test
+
+      # The u256 and secp256k1 jobs run the guests on this runner, the one
+      # of this commit.
+      - name: Save the runner image
+        run: docker save openvm-divrem-test | gzip > openvm-runner.tar.gz
+
+      - name: Upload the runner image
+        uses: actions/upload-artifact@v7
+        with:
+          name: openvm-runner
+          path: openvm-runner.tar.gz
+          retention-days: 1
 
   build-nupkg:
     name: Build NuGet package
