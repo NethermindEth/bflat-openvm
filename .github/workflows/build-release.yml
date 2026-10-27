@@ -7,10 +7,6 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      bflat_ref:
-        description: bflat-riscv64 ref to build the linker against
-        default: feature/new_zkvms
-        type: string
       publish:
         description: Publish to NuGet
         default: "No"
@@ -27,6 +23,9 @@ on:
 env:
   # push and pull_request runs have no inputs; they get the default.
   OPENVM_REF: ${{ inputs.openvm_ref || 'v2.1.0' }}
+
+permissions:
+  contents: read
 
 jobs:
   build-libopenvm:
@@ -66,7 +65,31 @@ jobs:
           path: |
             output/libopenvm.a
             output/libopenvm.bflat.manifest
+            output/openvm_entry.o
+            output/openvm.ld
+            output/openvm.bflat.manifest
           if-no-files-found: error
+
+  platform-tests:
+    # platform/entry.S, the bflat entry point of the guest: _start for the
+    # OpenVM entry, and the 64-bit memcpy/memmove/memset, cross-compiled and run under
+    # qemu-user. The tests came here from bflat-riscv64 with the entry point.
+    name: Platform unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install the RISC-V toolchain and qemu-user
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-riscv64-linux-gnu qemu-user-static
+
+      - name: Build the platform files
+        run: platform/build.sh
+
+      - name: Run the unit tests
+        run: tests/platform/run.sh
 
   link-guest:
     # The surface check in build-libopenvm proves the symbols exist. This proves
@@ -83,6 +106,12 @@ jobs:
       # 26.04 ships 78 with no compatible soname. bflat-riscv64's own CI does
       # not hit this because it runs bflat from its packaged Docker image.
       image: ubuntu:24.04
+    env:
+      # The SDK of the CI of bflat-riscv64; bflat builds for .NET 11 only.
+      SDK_VERSION: 11.0.100-preview.6.26359.118
+      # bflat checks the signatures of the releases it downloads (the
+      # dotnet-riscv runtime and uGC) with this key.
+      BFLAT_SIGNING_PUBLIC_KEY: ${{ vars.BFLAT_SIGNING_PUBLIC_KEY }}
     steps:
       - name: Install the toolchain
         run: |
@@ -99,7 +128,7 @@ jobs:
         run: |
           wget -q https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh
           chmod +x dotnet-install.sh
-          ./dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet
+          ./dotnet-install.sh --version "$SDK_VERSION" --install-dir /usr/share/dotnet
           ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet
           echo "DOTNET_ROOT=/usr/share/dotnet" >> $GITHUB_ENV
           echo "/usr/share/dotnet" >> $GITHUB_PATH
@@ -113,7 +142,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: NethermindEth/bflat-riscv64
-          ref: ${{ inputs.bflat_ref || 'feature/new_zkvms' }}
+          ref: master
           path: bflat-riscv64
 
       - name: Download the libopenvm artifact
@@ -124,22 +153,19 @@ jobs:
 
       - name: Build bflat and its native modules
         working-directory: bflat-riscv64
-        # The modules leg is what produces lib/linux/riscv64/openvm/{script.ld,
-        # entrypoint.o} - the memory map this test is here to link against.
+        # The modules leg produces the lib/modules that the OpenVM platform
+        # requires. The platform itself - entry point and memory map - is in
+        # this repository's output/ (platform/build.sh), next to libopenvm,
+        # and --extlib reads both manifests from there.
         run: |
-          ./build.sh modules riscv64 perf 10
-          ./build.sh bflat riscv64 perf 10
+          ./build.sh modules riscv64
+          ./build.sh bflat riscv64
 
       - name: Link the guest against libopenvm
         run: |
           set -e
-          # The layout copy of the linker script is what the link actually
-          # uses; print both so a stale layout is visible rather than
-          # mystifying.
-          sha256sum bflat-riscv64/src/bflat/bin/Debug/net10.0/lib/linux/riscv64/openvm/script.ld \
-                    bflat-riscv64/src/bflat/modules/zkvm_openvm/script.ld
           cp bflat-openvm/bflat-manifest.json bflat-openvm/output/libopenvm.bflat.manifest
-          bflat-riscv64/src/bflat/bin/Debug/net10.0/bflat build \
+          bflat-riscv64/src/bflat/bin/Debug/net11.0/bflat build \
             bflat-openvm/tests/integration/guest.cs \
             --os linux --arch riscv64 --libc openvm --stdlib dotnet \
             --no-pie --no-pthread -Ot \
@@ -147,13 +173,13 @@ jobs:
             -o guest
           riscv64-linux-gnu-readelf -h guest | grep -E 'Class:|Machine:|Entry point'
           ls -la guest
-          bflat-riscv64/src/bflat/bin/Debug/net10.0/bflat build \
+          bflat-riscv64/src/bflat/bin/Debug/net11.0/bflat build \
             bflat-openvm/tests/integration/u256.cs \
             --os linux --arch riscv64 --libc openvm --stdlib dotnet \
             --no-pie --no-pthread -Ot \
             --extlib "$PWD/bflat-openvm/output/libopenvm.bflat.manifest" \
             -o u256
-          bflat-riscv64/src/bflat/bin/Debug/net10.0/bflat build             bflat-openvm/tests/secp256k1/guest.cs             --os linux --arch riscv64 --libc openvm --stdlib dotnet             --no-pie --no-pthread -Ot             --extlib "$PWD/bflat-openvm/output/libopenvm.bflat.manifest"             -o secp256k1-guest
+          bflat-riscv64/src/bflat/bin/Debug/net11.0/bflat build             bflat-openvm/tests/secp256k1/guest.cs             --os linux --arch riscv64 --libc openvm --stdlib dotnet             --no-pie --no-pthread -Ot             --extlib "$PWD/bflat-openvm/output/libopenvm.bflat.manifest"             -o secp256k1-guest
 
       - name: Upload the linked guests
         # Keeping the image makes an "N instructions the VM cannot decode"
@@ -182,10 +208,10 @@ jobs:
     # thing, so the vector guest runs on the OpenVM runner and must report zero
     # mismatches over its 444 checks.
     name: Run the u256 vectors on OpenVM
-    needs: link-guest
+    needs: [link-guest, run-divrem-vectors]
     runs-on: ubuntu-latest
     env:
-      OPENVM_IMAGE: nethermindeth/openvm-runner:v2.1.0-rv64@sha256:d8209a5db5d59df6d6f5899b2ce6866f81c30bdc3df952dc78243b8316706baa
+      OPENVM_IMAGE: openvm-divrem-test
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -196,11 +222,18 @@ jobs:
           name: integration-guest
           path: guests
 
+      - name: Load the runner image
+        uses: actions/download-artifact@v4
+        with:
+          name: openvm-runner
+
+      - name: Load the runner
+        run: gunzip -c openvm-runner.tar.gz | docker load
+
       - name: Execute the vector guest
         run: |
-          cp runner/openvm.toml guests/
           : > guests/empty.raw
-          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/u256 /n/openvm.toml /n/empty.raw | tail -1)
+          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/u256 /n/empty.raw | tail -1)
           echo "$out"
           # Mismatches, then checks, as little-endian u64s.
           [ "$out" = "public_values=0000000000000000bc0100000000000000000000000000000000000000000000" ] \
@@ -211,10 +244,10 @@ jobs:
     # on OpenVM itself, against the same reference, adversarial vectors
     # included.
     name: Run secp256k1 recovery on OpenVM
-    needs: link-guest
+    needs: [link-guest, run-divrem-vectors]
     runs-on: ubuntu-latest
     env:
-      OPENVM_IMAGE: nethermindeth/openvm-runner:v2.1.0-rv64@sha256:d8209a5db5d59df6d6f5899b2ce6866f81c30bdc3df952dc78243b8316706baa
+      OPENVM_IMAGE: openvm-divrem-test
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -225,11 +258,18 @@ jobs:
           name: integration-guest
           path: guests
 
+      - name: Load the runner image
+        uses: actions/download-artifact@v4
+        with:
+          name: openvm-runner
+
+      - name: Load the runner
+        run: gunzip -c openvm-runner.tar.gz | docker load
+
       - name: Run the vectors
         run: |
           expected=$(python3 tests/secp256k1/test_ecrecover.py --openvm-vectors guests/vectors.bin)
-          cp runner/openvm.toml guests/
-          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/secp256k1-guest /n/openvm.toml /n/vectors.bin | tail -1)
+          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/secp256k1-guest /n/vectors.bin | tail -1)
           echo "$out"
           [ "$out" = "public_values=$expected" ]             || { echo "::error::secp256k1 vectors failed: expected $expected"; exit 1; }
 
@@ -251,16 +291,24 @@ jobs:
       - name: Execute the vectors
         run: bash tests/divrem/run.sh openvm-divrem-test
 
+      # The u256 and secp256k1 jobs run the guests on this runner, the one
+      # of this commit.
+      - name: Save the runner image
+        run: docker save openvm-divrem-test | gzip > openvm-runner.tar.gz
+
+      - name: Upload the runner image
+        uses: actions/upload-artifact@v7
+        with:
+          name: openvm-runner
+          path: openvm-runner.tar.gz
+          retention-days: 1
+
   build-nupkg:
     name: Build NuGet package
     needs: [build-libopenvm, run-divrem-vectors, run-secp256k1-guest, run-u256-vectors]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
-    env:
-      NUGET_URL: ${{ inputs.publish == 'Staging' && 'https://int.nugettest.org' || 'https://www.nuget.org' }}
-      NUGET_SOURCE: ${{ inputs.publish == 'Staging' && 'https://apiint.nugettest.org' || 'https://api.nuget.org' }}/v3/index.json
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -278,8 +326,8 @@ jobs:
       - name: Move artifacts into the package project
         run: |
           mkdir -p src/runtime/runtimes/linux-riscv64/native
-          mv libopenvm.a src/runtime/runtimes/linux-riscv64/native/
-          mv libopenvm.bflat.manifest src/runtime/
+          mv libopenvm.a libopenvm.bflat.manifest openvm_entry.o openvm.ld openvm.bflat.manifest \
+             src/runtime/runtimes/linux-riscv64/native/
 
       - name: Detect version
         id: version
@@ -298,15 +346,30 @@ jobs:
           echo "Detected version $version"
           echo "version=$version" >> $GITHUB_OUTPUT
 
-      - name: Inject openvm_ref and package_version into the manifest
+      # A run that is run again keeps its run number, and with it the
+      # version. Its publish jobs would replace the files of the release
+      # that has the version already. Start a new run instead.
+      - name: Check that the release does not exist
+        if: github.event_name == 'workflow_dispatch' && inputs.publish != 'No'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 ; then
+            echo "::error::the release v$VERSION exists already: start a new run"
+            exit 1
+          fi
+
+      - name: Inject openvm_ref and the package version into the manifests
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          MANIFEST=src/runtime/libopenvm.bflat.manifest
-          jq --arg ref "$OPENVM_REF" --arg version "$VERSION" \
-            '. + {openvm_ref: $ref, package_version: $version}' \
-            "$MANIFEST" > "$MANIFEST.tmp"
-          mv "$MANIFEST.tmp" "$MANIFEST"
+          for MANIFEST in src/runtime/runtimes/linux-riscv64/native/*.bflat.manifest ; do
+            jq --arg ref "$OPENVM_REF" --arg version "$VERSION" \
+              '.version = $version | .metadata.openvm_ref = $ref' \
+              "$MANIFEST" > "$MANIFEST.tmp"
+            mv "$MANIFEST.tmp" "$MANIFEST"
+          done
 
       - name: Pack
         working-directory: src/runtime
@@ -314,9 +377,79 @@ jobs:
           dotnet pack Nethermind.OpenVM.Runtime.csproj -c release \
             -p:Version=${{ steps.version.outputs.version }}
 
+      # The lists of the package entries, for the sign job (docs/signing.md
+      # in bflat-riscv64). This job has no key: the sign job signs the lists,
+      # and the publish job adds the signatures to the package.
+      - name: List the package entries
+        working-directory: src/runtime
+        run: python3 ../../scripts/sign_package.py list-nupkg ../../signature ./artifacts/package/release/*.nupkg
+
+      - name: Upload nupkg artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: nupkg-unsigned
+          path: src/runtime/artifacts/package/release/*.nupkg
+          if-no-files-found: error
+
+      - name: Upload the lists
+        uses: actions/upload-artifact@v7
+        with:
+          name: bflat-signature-lists
+          path: signature/*.sha256
+          if-no-files-found: error
+
+  # The private key is only in the sign job, which runs no build
+  # (docs/signing.md in bflat-riscv64).
+  sign:
+    name: Sign the package
+    if: github.event_name == 'workflow_dispatch' && inputs.publish != 'No'
+    needs: build-nupkg
+    permissions: {}
+    uses: NethermindEth/bflat-riscv64/.github/workflows/sign.yml@34a3e73ad5b2f34a868f5793172dc4a3a97bf382 # master
+    with:
+      lists: bflat-signature-lists
+    secrets:
+      BFLAT_SIGNING_KEY: ${{ secrets.BFLAT_SIGNING_KEY }}
+
+  publish-nupkg:
+    name: Publish NuGet package
+    if: github.event_name == 'workflow_dispatch' && inputs.publish != 'No'
+    needs: sign
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      NUGET_URL: ${{ inputs.publish == 'Staging' && 'https://int.nugettest.org' || 'https://www.nuget.org' }}
+      NUGET_SOURCE: ${{ inputs.publish == 'Staging' && 'https://apiint.nugettest.org' || 'https://api.nuget.org' }}/v3/index.json
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+
+      - name: Download nupkg artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: nupkg-unsigned
+          path: nupkg
+
+      - name: Download the signatures
+        uses: actions/download-artifact@v8
+        with:
+          name: bflat-signatures
+          path: signature
+
+      # Each package must agree with the list that was signed, and the
+      # signature must be valid for the public key, before the push.
+      - name: Add the signatures
+        env:
+          BFLAT_SIGNING_PUBLIC_KEY: ${{ vars.BFLAT_SIGNING_PUBLIC_KEY }}
+        run: python3 scripts/sign_package.py embed signature nupkg/*.nupkg
+
       - name: NuGet login
-        if: github.event_name == 'workflow_dispatch' && inputs.publish != 'No'
-        uses: nuget/login@v1
+        uses: nuget/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
         id: login
         with:
           user: ${{ secrets.NUGET_USER }}
@@ -324,24 +457,21 @@ jobs:
           token-service-url: ${{ env.NUGET_URL }}/api/v2/token
 
       - name: Publish NuGet package
-        if: github.event_name == 'workflow_dispatch' && inputs.publish != 'No'
-        working-directory: src/runtime
         run: |
-          dotnet nuget push ./artifacts/package/release/*.nupkg \
-            -k "${{ steps.login.outputs.NUGET_API_KEY }}" -s ${{ env.NUGET_SOURCE }} \
-            --skip-duplicate
+          dotnet nuget push nupkg/*.nupkg \
+            -k "${{ steps.login.outputs.NUGET_API_KEY }}" -s ${{ env.NUGET_SOURCE }}
 
       - name: Upload nupkg artifact
         uses: actions/upload-artifact@v7
         with:
           name: nupkg
-          path: src/runtime/artifacts/package/release/*.nupkg
+          path: nupkg/*.nupkg
           if-no-files-found: error
 
   publish-nupkg-github:
     name: Publish to GitHub
     if: github.event_name == 'workflow_dispatch' && inputs.publish != 'No'
-    needs: build-nupkg
+    needs: [build-nupkg, publish-nupkg]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -359,14 +489,19 @@ jobs:
           path: libopenvm
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
+          # The commit that was built; the default is the head of the default branch.
+          target_commitish: ${{ github.sha }}
           tag_name: v${{ needs.build-nupkg.outputs.version }}
           name: Nethermind.OpenVM.Runtime ${{ needs.build-nupkg.outputs.version }}
           files: |
             nupkg/*.nupkg
             libopenvm/libopenvm.a
             libopenvm/libopenvm.bflat.manifest
+            libopenvm/openvm_entry.o
+            libopenvm/openvm.ld
+            libopenvm/openvm.bflat.manifest
           body: |
             OpenVM zkVM accelerators for bflat guests.
 

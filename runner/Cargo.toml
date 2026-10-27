@@ -20,6 +20,5 @@ openvm-stark-sdk = { workspace = true }
 num-bigint = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
-toml = { workspace = true }
 hex = { workspace = true }
 eyre = { workspace = true }

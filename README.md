@@ -31,12 +31,45 @@ Dependencies are pinned to `develop-v2.1.0`, OpenVM's live RV64 line — not
 `develop-v2.1.0-rv64` (an older snapshot of the same work) and not `main`,
 which is still RV32 and rejects a 64-bit ELF outright.
 
+## Platform
+
+This package also defines the OpenVM target for bflat: `--libc openvm` selects
+the platform that `platform/` describes, so bflat itself knows nothing about
+OpenVM. `platform/build.sh` builds it into `output/` (`openvm_entry.o`, `openvm.ld` and `openvm.bflat.manifest`):
+
+- `entry.S` is the guest's `_start` and the OpenVM halt protocol, plus the 64-bit `memcpy`/`memmove`/`memset`, the TERMINATE and PrintStr intrinsics.
+- `entry.S` also implements the platform interface that bflat's modules call
+  (bflat itself has no code for any one zkVM): `zkvm_platform_exit` (`TERMINATE`) and `zkvm_platform_write` (`PrintStr`).
+- the linker script is the OpenVM memory map;
+- the platform manifest gives the instruction set, the ABI, the RyuJIT
+  options, the defines and the post-link steps, and lists the bflat modules
+  that the guest needs (format: `docs/manifest.md` in bflat-riscv64).
+
+`--extlib` with a `.bflat.manifest` path reads every `*.bflat.manifest` in that
+directory, so the platform and the bindings come together. A guest that does
+not use the accelerators can be built with the platform files alone.
+`tests/platform/run.sh` runs the unit tests of the entry point under qemu-user.
+
 ## Usage
 
 ```console
 $ bflat build app.cs --os linux --arch riscv64 --libc openvm \
       --extlib path/to/libopenvm.bflat.manifest
 ```
+
+## Signature
+
+The release workflow signs the `.nupkg` before it publishes it. The build
+job lists the package entries (`scripts/sign_package.py list-nupkg`). The
+sign job, the reusable workflow `sign.yml` of bflat-riscv64, signs the lists
+with the GitHub Actions secret `BFLAT_SIGNING_KEY`; it is the only job that
+has the key, and it runs no build. The publish job adds the signatures
+(`scripts/sign_package.py embed`) and checks them with the variable
+`BFLAT_SIGNING_PUBLIC_KEY`. bflat refuses a package with a bad signature, and an
+unsigned package unless `--allow-unsigned` is given. A local
+`.bflat.manifest` is not checked. See `docs/signing.md` in bflat-riscv64.
+`scripts/sign_package.py` is a copy of the script in bflat-riscv64; keep it
+the same.
 
 ## Building
 
@@ -113,7 +146,7 @@ curves drag in OpenVM's guest runtime (`_start`, `mem*`, `sys_alloc_aligned`),
 and `-Z build-std` compiles `compiler_builtins` for a target with no libm, so
 it exports the entire C math surface as well. Every one of those collides with
 the guest: musl owns the math surface and `mem*`,
-`modules/zkvm_openvm/module.S` owns `_start`, and bflat's `rust_sys` module
+`platform/entry.S` owns `_start`, and bflat's `rust_sys` module
 wraps `sys_alloc_aligned` so OpenVM's bump allocator draws from pal's heap
 instead of opening a second one.
 
