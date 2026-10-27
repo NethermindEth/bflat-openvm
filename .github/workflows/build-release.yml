@@ -222,9 +222,10 @@ jobs:
 
       - name: Execute the vector guest
         run: |
-          cp runner/openvm.toml guests/
           : > guests/empty.raw
-          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/u256 /n/openvm.toml /n/empty.raw | tail -1)
+          # "-": the image of before takes the configuration it ships, the
+          # standard one. Remove the argument with the next image.
+          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/u256 - /n/empty.raw | tail -1)
           echo "$out"
           # Mismatches, then checks, as little-endian u64s.
           [ "$out" = "public_values=0000000000000000bc0100000000000000000000000000000000000000000000" ] \
@@ -252,8 +253,7 @@ jobs:
       - name: Run the vectors
         run: |
           expected=$(python3 tests/secp256k1/test_ecrecover.py --openvm-vectors guests/vectors.bin)
-          cp runner/openvm.toml guests/
-          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/secp256k1-guest /n/openvm.toml /n/vectors.bin | tail -1)
+          out=$(docker run --rm -v "$PWD/guests:/n" "$OPENVM_IMAGE" /n/secp256k1-guest - /n/vectors.bin | tail -1)
           echo "$out"
           [ "$out" = "public_values=$expected" ]             || { echo "::error::secp256k1 vectors failed: expected $expected"; exit 1; }
 
