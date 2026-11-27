@@ -12,8 +12,8 @@ ENTRY(_start)
 
 MEMORY {
   /*
-   * OpenVM memory map, read from the live RV64 line, branch develop-v2.1.0
-   * (NOT develop-v2.1.0-rv64, an older snapshot of the same work, and NOT
+   * OpenVM memory map, read from the live RV64 line, branch develop-v2.x.0
+   * (NOT develop-v2.x.0-rv64, an older snapshot of the same work, and NOT
    * main, which is still RV32 and rejects a 64-bit ELF):
    *   crates/toolchain/platform/src/memory.rs   MEM_BITS = 32, so guest
    *     memory is the whole 4 GiB u32 space; GUEST_MIN_MEM = 0x400,

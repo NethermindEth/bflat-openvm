@@ -21,11 +21,11 @@
 #
 # The input is RAW SSZ, as for SP1: the test bucket's .ssz files are ZisK-framed.
 #
-# OPENVM_REV is on the rv64 line (branch develop-v2.1.0). `main` is still rv32
+# OPENVM_REV is on the rv64 line (branch develop-v2.x.0). `main` is still rv32
 # and rejects a 64-bit ELF outright, so this is not a version preference. Pinned
 # to a commit rather than the branch so the image is reproducible.
 FROM rust:1.91-bookworm AS build
-ARG OPENVM_REV=56d5e4dbb545662f7ba3c31ac6c3e0ab1c6a481d
+ARG OPENVM_REV=1af7cee7aceb695593ca4674e32582094395d0b6
 WORKDIR /src
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git pkg-config libssl-dev cmake \

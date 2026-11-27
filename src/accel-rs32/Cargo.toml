@@ -6,7 +6,7 @@ license = "MIT"
 description = "eth-act zkVM accelerator and IO C ABI for OpenVM main (RV32), packaged as a staticlib"
 
 # The sources of src/accel-rs, built for OpenVM's RV32 line. Only the
-# dependency graph differs: `main` instead of `develop-v2.1.0`.
+# dependency graph differs: `main` instead of `develop-v2.x.0`.
 [lib]
 name = "openvmaccel"
 crate-type = ["staticlib"]

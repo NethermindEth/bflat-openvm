@@ -18,8 +18,9 @@ crate-type = ["staticlib"]
 # (src/io.rs), which openvm-accelerators deliberately leaves to the program.
 #
 # Everything is referenced by BRANCH, not by rev, and the branch is
-# `develop-v2.1.0` - OpenVM's live RV64 line. NOT develop-v2.1.0-rv64 (an
-# older snapshot of the same work) and NOT main (still RV32).
+# `develop-v2.x.0` - OpenVM's live RV64 line. NOT develop-v2.x.0-rv64 (an
+# older snapshot of the same work), NOT develop-v2.x.0-old (the frozen line
+# before upstream rebased it onto v2.1.0) and NOT main (still RV32).
 #
 # The branch reference is not cosmetic: Cargo's source identity for a git
 # dependency includes the reference, so a `rev = ...` and a `branch = ...`
@@ -28,17 +29,17 @@ crate-type = ["staticlib"]
 # init declares. openvm-eth pins openvm by branch, so we must too.
 # Cargo.lock is committed and pins the exact commits.
 [dependencies]
-openvm-accelerators = { git = "https://github.com/axiom-crypto/openvm-eth.git", branch = "develop-v2.1.0", default-features = false }
+openvm-accelerators = { git = "https://github.com/axiom-crypto/openvm-eth.git", branch = "develop-v2.x.0", default-features = false }
 
 # Only for src/init.rs and src/io.rs. The macros expand to code that names the
 # `openvm` crate, so it has to be a direct dependency even though the
 # accelerators pull it in transitively.
-openvm               = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0", default-features = false }
-openvm-algebra-guest = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0" }
-openvm-ecc-guest     = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0" }
-openvm-k256          = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0", package = "k256" }
-openvm-p256          = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0", package = "p256" }
-openvm-pairing       = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0", features = ["bn254", "bls12_381"] }
+openvm               = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.x.0", default-features = false }
+openvm-algebra-guest = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.x.0" }
+openvm-ecc-guest     = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.x.0" }
+openvm-k256          = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.x.0", package = "k256" }
+openvm-p256          = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.x.0", package = "p256" }
+openvm-pairing       = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.x.0", features = ["bn254", "bls12_381"] }
 
 [profile.release]
 opt-level = 3

@@ -54,8 +54,9 @@ case "${ARCH}" in
     *) fail "ARCH must be riscv64 or riscv32, not ${ARCH}" ;;
 esac
 LIB="${OUTPUT_DIR}/${LIB_NAME}.a"
-# openvm-eth's develop-v2.1.0 as src/accel-rs/Cargo.lock pins it. The RV32
-# build takes openvm-accelerators from a checkout of it (src/accel-rs32/Cargo.toml).
+# openvm-eth's develop-v2.1.0, the commit src/accel-rs/Cargo.lock pinned before
+# the RV64 build moved to develop-v2.x.0. The RV32 build takes
+# openvm-accelerators from a checkout of it (src/accel-rs32/Cargo.toml).
 OPENVM_ETH_REV="${OPENVM_ETH_REV:-fd54306404e9dd120a520c806d8c8218b4a18248}"
 
 AS="${AS:-riscv64-linux-gnu-as}"

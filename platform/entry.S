@@ -2,7 +2,7 @@
  * @file
  * @brief ZKVM OpenVM implementation.
  *
- * OpenVM's RV64 line (openvm-org/openvm, branch develop-v2.1.0-rv64) proves
+ * OpenVM's RV64 line (openvm-org/openvm, branch develop-v2.x.0) proves
  * RV64IM with lp64 and no A/C extension. The transpiler
  * (crates/toolchain/transpiler/src/elf.rs) reads PT_LOAD program headers,
  * requires a 64-bit ELF, and does NOT set up sp - _start points it at the
