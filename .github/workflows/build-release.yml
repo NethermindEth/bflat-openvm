@@ -268,9 +268,10 @@ jobs:
         # image. OpenVM emits `unimp` for a word it cannot decode and traps
         # only if execution reaches it, so one reappearing would be a landmine
         # rather than a load failure - which is exactly why it is worth failing
-        # the build over.
+        # the build over. --max-address keeps the image inside the 512 MiB
+        # that ere's OpenVM (v2.1.0-preview) loads.
         run: |
-          python3 bflat-openvm/tests/integration/check_image.py guest --require-custom --no-atomics
+          python3 bflat-openvm/tests/integration/check_image.py guest --require-custom --no-atomics --max-address 0x20000000
 
   run-u256-vectors:
     # guest.cs only links the u256 shims; this executes them. A wrong funct7 or

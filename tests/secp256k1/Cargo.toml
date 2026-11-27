@@ -17,9 +17,9 @@ name = "harness"
 path = "src/main.rs"
 
 [dependencies]
-openvm-algebra-guest = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0" }
-openvm-ecc-guest     = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0" }
-openvm-k256          = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.1.0", package = "k256" }
+openvm-algebra-guest = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.x.0" }
+openvm-ecc-guest     = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.x.0" }
+openvm-k256          = { git = "https://github.com/openvm-org/openvm.git", branch = "develop-v2.x.0", package = "k256" }
 
 [workspace]
 

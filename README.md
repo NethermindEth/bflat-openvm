@@ -27,9 +27,10 @@ guest, in three layers:
    through the standard. OpenVM has no syscalls: each primitive is a custom
    instruction under RISC-V custom-0 (`0x0b`) or custom-1 (`0x2b`).
 
-Dependencies are pinned to `develop-v2.1.0`, OpenVM's live RV64 line — not
-`develop-v2.1.0-rv64` (an older snapshot of the same work) and not `main`,
-which is still RV32 and rejects a 64-bit ELF outright.
+Dependencies are pinned to `develop-v2.x.0`, OpenVM's live RV64 line — not
+`develop-v2.x.0-rv64` (an older snapshot of the same work),
+`develop-v2.x.0-old` (the line before upstream rebased it onto v2.1.0) and not
+`main`, which is still RV32 and rejects a 64-bit ELF outright.
 
 ## Platform
 

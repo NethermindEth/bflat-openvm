@@ -5,7 +5,7 @@
 # RUN a bflat guest has to build the SDK from source, which is the long pole in
 # any job that touches it. This publishes it once.
 #
-# runner/ is the harness of the rv64 line (branch develop-v2.1.0), runner32/
+# runner/ is the harness of the rv64 line (branch develop-v2.x.0), runner32/
 # that of the rv32 line (`main`): each line rejects the other's ELF outright.
 # Each Dockerfile pins its revision to a commit so the image is reproducible.
 #
@@ -34,7 +34,7 @@ on:
   workflow_dispatch:
     inputs:
       line:
-        description: "OpenVM line: rv64 (runner/, develop-v2.1.0) or rv32 (runner32/, main)"
+        description: "OpenVM line: rv64 (runner/, develop-v2.x.0) or rv32 (runner32/, main)"
         type: choice
         default: rv64
         options:

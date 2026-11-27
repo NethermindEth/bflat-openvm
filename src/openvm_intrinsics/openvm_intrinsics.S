@@ -5,7 +5,7 @@
  * OpenVM has no syscalls at all: every accelerated primitive is a custom
  * instruction under RISC-V custom-0 (opcode 0x0b), distinguished by funct3 and
  * funct7. Encodings are taken from the guest crates on the RV64 branch
- * (openvm, branch develop-v2.1.0-rv64):
+ * (openvm, branch develop-v2.x.0):
  *
  *   extensions/keccak256/guest/src/lib.rs   funct3 0b100, funct7 0 (keccakf), 1 (xorin)
  *   extensions/sha2/guest/src/lib.rs        funct3 0b100, funct7 2 (sha256), 3 (sha512)

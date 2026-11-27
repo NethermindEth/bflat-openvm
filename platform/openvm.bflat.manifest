@@ -84,8 +84,8 @@
       },
       "EnableRiscV64Atomic=0",
       {
-        "value": "JitZkBumpAddr=bffefff8",
-        "note": "Per-site inline allocation (dotnet-riscv fixup 26): the cell of the bump pointer, at a fixed address. It MUST equal g_zk_bump_ptr in the linker script. OpenVM has the full 4 GiB u32 range (MEM_BITS 32 on the develop-v2.1.0 line); its RAM stays up to 0xbfff0000, and the cell is 8 bytes below it."
+        "value": "JitZkBumpAddr=1ffffff8",
+        "note": "Per-site inline allocation (dotnet-riscv fixup 26): the cell of the bump pointer, at a fixed address. It MUST equal g_zk_bump_ptr in the linker script. The RAM ends at 0x20000000, the top of the 512 MiB that v2.1.0-preview addresses, and the cell is its last 8 bytes."
       }
     ]
   },

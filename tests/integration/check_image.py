@@ -55,6 +55,21 @@ def segments(readelf, elf):
     return loads
 
 
+def load_ranges(readelf, elf):
+    """The entry point and the (vaddr, end) of every PT_LOAD."""
+    out = subprocess.run([readelf, "-hlW", elf], capture_output=True, text=True, check=True).stdout
+    entry = None
+    ranges = []
+    for line in out.splitlines():
+        f = line.split()
+        if line.strip().startswith("Entry point address:"):
+            entry = int(f[-1], 16)
+        elif len(f) >= 8 and f[0] == "LOAD":
+            vaddr, memsz = int(f[2], 16), int(f[5], 16)
+            ranges.append((vaddr, vaddr + memsz))
+    return entry, ranges
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("elf")
@@ -66,6 +81,8 @@ def main():
                     help="fail if the image contains A-extension instructions")
     ap.add_argument("--sp1-segments", action="store_true",
                     help="check PT_LOADs against SP1's loader rules")
+    ap.add_argument("--max-address", type=lambda v: int(v, 0),
+                    help="fail if the entry point or a PT_LOAD reaches this address")
     args = ap.parse_args()
 
     counts, by_symbol = scan(args.objdump, args.elf)
@@ -99,6 +116,17 @@ def main():
                 failures.append(f"0x{vaddr:x}: not readable ({flags})")
             if "W" in flags and "E" in flags:
                 failures.append(f"0x{vaddr:x}: writable and executable ({flags})")
+
+    if args.max_address is not None:
+        # OpenVM's Elf::decode rejects both on a line with less guest memory.
+        entry, ranges = load_ranges(args.readelf, args.elf)
+        print(f"\nentry 0x{entry:x}, PT_LOAD ranges (limit 0x{args.max_address:x}):")
+        if entry >= args.max_address:
+            failures.append(f"entry point 0x{entry:x} at or above 0x{args.max_address:x}")
+        for start, end in ranges:
+            print(f"  0x{start:016x}-0x{end:016x}")
+            if end > args.max_address:
+                failures.append(f"PT_LOAD 0x{start:x}-0x{end:x} ends above 0x{args.max_address:x}")
 
     if failures:
         print("\nFAILED:")
