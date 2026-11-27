@@ -25,15 +25,21 @@ MEMORY {
    *   crates/toolchain/transpiler/src/elf.rs    Elf::decode(.., max_mem) is
    *     always called with MEM_SIZE, and addresses stay u32.
    *
-   * Nothing in the loader enforces OpenVM's own STACK_TOP/TEXT_START - it
-   * takes the entry from e_entry and the rest from PT_LOAD - so this mirrors
-   * the ZisK map instead. That is what lets the bump cell sit at the same
-   * 0xbffefff8 as every other zkVM target: OpenVM used to cap guest memory at
-   * 512 MiB, which put that address out of reach and forced a target-specific
-   * JitZkBumpAddr; at 4 GiB the special case disappears.
+   * Everything stays below 512 MiB (0x20000000) all the same. Ere and
+   * ere-guests run OpenVM v2.1.0-preview, an RV64 tag from before the 4 GiB
+   * change, whose MEM_BITS is 29: Elf::decode there rejects an entry point
+   * or segment at or above 0x20000000, and so does the VK generation, which
+   * transpiles the ELF the same way. One image now loads on both lines.
+   *
+   * The loader takes the entry from e_entry and the rest from PT_LOAD, so the
+   * layout is ours: text at OpenVM's TEXT_START, RAM from 16 MiB to the top
+   * of the 512 MiB, with the bump cell in its last 8 bytes, as on the RV32
+   * line (platform32/openvm32.ld). The ~491 MiB heap compares with ~505 MiB
+   * on ZisK; the 200M-gas benchmark blocks of tests-zkevm-benchmark v21.0.7
+   * peak at ~229 MiB.
    */
-  rom   (rxa) : ORIGIN = 0x80000000, LENGTH = 0x10000000
-  ram   (rwxa): ORIGIN = 0xa0020000, LENGTH = 0x1FFD0000
+  rom   (rxa) : ORIGIN = 0x00200800, LENGTH = 0x01000000 - 0x00200800
+  ram   (rwxa): ORIGIN = 0x01000000, LENGTH = 0x20000000 - 0x01000000
 }
 
 PHDRS {
@@ -222,10 +228,10 @@ SECTIONS
    * allocator (pal/module.c) + JIT-emitted inline allocation share the same
    * pointer. Heap top is lowered by 24 so neither cell ever overlaps the heap.
    *
-   * Same address as SP1. openvm.bflat.manifest passes it to the JIT as
+   * Same address as the RV32 line. openvm.bflat.manifest passes it to the JIT as
    * JitZkBumpAddr and the two must stay in step - dotnet-riscv fixup 26 takes
    * the cell address from that knob and inlines nothing when it is 0. */
-  PROVIDE(g_zk_bump_ptr     = ORIGIN(ram) + LENGTH(ram) - 8);   /* = 0xbffefff8 */
+  PROVIDE(g_zk_bump_ptr     = ORIGIN(ram) + LENGTH(ram) - 8);   /* = 0x1ffffff8 */
   /* Companion cell 8 bytes BELOW the bump pointer, holding the lowest address
    * the heap may occupy. JIT-emitted inline allocation (dotnet-riscv fixup 26)
    * loads it and fail-fasts instead of bumping past the bottom of the heap, so
@@ -234,7 +240,7 @@ SECTIONS
    * from .init_array, before the runtime entry point, and never rewrites it -
    * that is what lets the JIT hoist the load out of loops and pay for the
    * bounds check once per method rather than once per allocation. */
-  PROVIDE(g_zk_heap_floor   = ORIGIN(ram) + LENGTH(ram) - 16);  /* = 0xbffefff0 */
+  PROVIDE(g_zk_heap_floor   = ORIGIN(ram) + LENGTH(ram) - 16);  /* = 0x1ffffff0 */
   PROVIDE(_kernel_heap_top  = ORIGIN(ram) + LENGTH(ram) - 24);
   PROVIDE(_kernel_heap_size = _kernel_heap_top - _kernel_heap_bottom);
 
